@@ -7,13 +7,14 @@ import kotlinx.serialization.Serializable
 data class LlmChatRequest(
     val model: String,
     val messages: List<LlmMessage>,
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    @SerialName("max_tokens") val maxTokens: Int? = null
 )
 
 @Serializable
 data class LlmMessage(
     val role: String,
-    val content: String
+    val content: String? = null
 )
 
 @Serializable

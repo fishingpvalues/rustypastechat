@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.security.SecurePreferences
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
@@ -19,42 +21,47 @@ class PreferencesManager(private val context: Context) {
 
     companion object {
         private val KEY_PASTE_SERVER_URL = stringPreferencesKey("paste_server_url")
-        private val KEY_AUTH_TOKEN = stringPreferencesKey("auth_token")
         private val KEY_LLM_ENABLED = booleanPreferencesKey("llm_enabled")
         private val KEY_LLM_ENDPOINT = stringPreferencesKey("llm_endpoint")
-        private val KEY_LLM_API_KEY = stringPreferencesKey("llm_api_key")
         private val KEY_LLM_MODEL = stringPreferencesKey("llm_model")
+        private val KEY_BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
+        private val KEY_LOCK_TIMEOUT = stringPreferencesKey("lock_timeout")
     }
 
+    private val securePrefs = SecurePreferences(context)
+
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
+        val secureToken = securePrefs.authToken
+        val secureApiKey = securePrefs.llmApiKey
         AppSettings(
             pasteServerUrl = prefs[KEY_PASTE_SERVER_URL] ?: "",
-            authToken = prefs[KEY_AUTH_TOKEN] ?: "",
+            authToken = secureToken.ifBlank { prefs[KEY_PASTE_SERVER_URL]?.let { "" } ?: "" },
             llmEnabled = prefs[KEY_LLM_ENABLED] ?: false,
             llmEndpoint = prefs[KEY_LLM_ENDPOINT] ?: "",
-            llmApiKey = prefs[KEY_LLM_API_KEY] ?: "",
-            llmModel = prefs[KEY_LLM_MODEL] ?: "gpt-3.5-turbo"
+            llmApiKey = secureApiKey,
+            llmModel = prefs[KEY_LLM_MODEL] ?: "gpt-3.5-turbo",
+            biometricEnabled = securePrefs.biometricEnabled,
+            lockTimeoutSeconds = securePrefs.lockTimeoutSeconds
         )
     }
 
     suspend fun saveSettings(settings: AppSettings) {
         context.dataStore.edit { prefs ->
             prefs[KEY_PASTE_SERVER_URL] = settings.pasteServerUrl
-            prefs[KEY_AUTH_TOKEN] = settings.authToken
             prefs[KEY_LLM_ENABLED] = settings.llmEnabled
             prefs[KEY_LLM_ENDPOINT] = settings.llmEndpoint
-            prefs[KEY_LLM_API_KEY] = settings.llmApiKey
             prefs[KEY_LLM_MODEL] = settings.llmModel.ifBlank { "gpt-3.5-turbo" }
+        }
+        securePrefs.apply {
+            authToken = settings.authToken
+            llmApiKey = settings.llmApiKey
+            biometricEnabled = settings.biometricEnabled
+            lockTimeoutSeconds = settings.lockTimeoutSeconds
         }
     }
 
-    fun getCurrentToken(): String? {
-        var token: String? = null
-        kotlinx.coroutines.runBlocking {
-            context.dataStore.data.first().let { prefs ->
-                token = prefs[KEY_AUTH_TOKEN]
-            }
-        }
-        return token
-    }
+    fun getCurrentToken(): String? = securePrefs.authToken.ifBlank { null }
+
+    val biometricEnabled: Boolean get() = securePrefs.biometricEnabled
+    val lockTimeoutSeconds: Int get() = securePrefs.lockTimeoutSeconds
 }

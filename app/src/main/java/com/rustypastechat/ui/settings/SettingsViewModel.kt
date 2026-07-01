@@ -58,6 +58,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { it.copy(settings = it.settings.copy(llmModel = model)) }
     }
 
+    fun updateBiometricEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(biometricEnabled = enabled)) }
+    }
+
+    fun updateLockTimeout(seconds: Int) {
+        _uiState.update { it.copy(settings = it.settings.copy(lockTimeoutSeconds = seconds)) }
+    }
+
     fun saveSettings() {
         viewModelScope.launch {
             preferencesManager.saveSettings(_uiState.value.settings)

@@ -74,6 +74,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.security.crypto)
+    implementation(libs.biometric.ktx)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 

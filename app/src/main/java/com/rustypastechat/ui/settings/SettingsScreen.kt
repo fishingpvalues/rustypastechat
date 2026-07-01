@@ -5,6 +5,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Link
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,7 +75,8 @@ private sealed class SettingsPage(val ordinal: Int) {
     object Main : SettingsPage(0)
     object Server : SettingsPage(1)
     object Llm : SettingsPage(2)
-    object About : SettingsPage(3)
+    object Security : SettingsPage(3)
+    object About : SettingsPage(4)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -154,9 +158,11 @@ fun SettingsScreen(
                 onNavigateBack = onNavigateBack,
                 onServerSettings = { currentPage = SettingsPage.Server },
                 onLlmSettings = { currentPage = SettingsPage.Llm },
+                onSecuritySettings = { currentPage = SettingsPage.Security },
                 onAbout = { currentPage = SettingsPage.About },
                 llmEnabled = uiState.settings.llmEnabled,
-                hasServerUrl = uiState.settings.pasteServerUrl.isNotBlank()
+                hasServerUrl = uiState.settings.pasteServerUrl.isNotBlank(),
+                biometricEnabled = uiState.settings.biometricEnabled
             )
             SettingsPage.Server -> ServerPage(
                 uiState = uiState,
@@ -178,6 +184,13 @@ fun SettingsScreen(
             SettingsPage.About -> AboutPage(
                 onBack = { currentPage = SettingsPage.Main }
             )
+            SettingsPage.Security -> SecurityPage(
+                uiState = uiState,
+                onUpdateBiometric = viewModel::updateBiometricEnabled,
+                onUpdateLockTimeout = viewModel::updateLockTimeout,
+                onSave = { viewModel.saveSettings(); currentPage = SettingsPage.Main },
+                onBack = { currentPage = SettingsPage.Main }
+            )
         }
     }
 }
@@ -189,8 +202,10 @@ private fun MainPage(
     onServerSettings: () -> Unit,
     onLlmSettings: () -> Unit,
     onAbout: () -> Unit,
+    onSecuritySettings: () -> Unit,
     llmEnabled: Boolean,
-    hasServerUrl: Boolean
+    hasServerUrl: Boolean,
+    biometricEnabled: Boolean
 ) {
     Scaffold(
         topBar = {
@@ -253,6 +268,29 @@ private fun MainPage(
                         title = "LLM Integration",
                         subtitle = if (llmEnabled) "OpenAI compatible" else "Disabled",
                         onClick = onLlmSettings
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(modifier = Modifier.padding(4.dp)) {
+                    Text(
+                        text = "Security",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+                    )
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Fingerprint,
+                        title = "Biometric Lock",
+                        subtitle = if (biometricEnabled) "Enabled" else "Disabled",
+                        onClick = onSecuritySettings
                     )
                 }
             }
@@ -515,6 +553,94 @@ private fun AboutPage(onBack: () -> Unit) {
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecurityPage(
+    uiState: SettingsUiState,
+    onUpdateBiometric: (Boolean) -> Unit,
+    onUpdateLockTimeout: (Int) -> Unit,
+    onSave: () -> Unit,
+    onBack: () -> Unit
+) {
+    val lockOptions = listOf(15 to "15s", 30 to "30s", 60 to "1 min", 300 to "5 min")
+    SubPageScaffold(title = "Biometric Lock", onBack = onBack) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Fingerprint,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Biometric Lock",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                "Require fingerprint or PIN to open the app",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.settings.biometricEnabled,
+                            onCheckedChange = onUpdateBiometric
+                        )
+                    }
+
+                    if (uiState.settings.biometricEnabled) {
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(16.dp))
+
+                        Text(
+                            "Auto-lock after",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            lockOptions.forEach { (secs, label) ->
+                                FilterChip(
+                                    selected = uiState.settings.lockTimeoutSeconds == secs,
+                                    onClick = { onUpdateLockTimeout(secs) },
+                                    label = {
+                                        Text(label, style = MaterialTheme.typography.labelMedium)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            FilledTonalButton(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.Save, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Save")
             }
         }
     }
