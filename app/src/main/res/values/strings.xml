@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RustyPaste Chat</string>
+    <string name="chat_title">Chat</string>
+    <string name="settings_title">Settings</string>
+    <string name="message_hint">Message</string>
+    <string name="send">Send</string>
+    <string name="paste_server_url">Paste Server URL</string>
+    <string name="auth_token">Auth Token</string>
+    <string name="llm_enabled">LLM Integration</string>
+    <string name="llm_endpoint">OpenAI Compatible Endpoint</string>
+    <string name="llm_api_key">API Key</string>
+    <string name="llm_model">Model</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="no_messages">No messages yet. Start chatting by pasting a note.</string>
+    <string name="connecting">Connecting…</string>
+    <string name="status_sending">Sending</string>
+    <string name="status_sent">Sent</string>
+    <string name="status_delivered">Delivered</string>
+    <string name="status_read">Read</string>
+    <string name="status_failed">Failed</string>
+    <string name="attachment">Attach file</string>
+    <string name="gallery">Gallery</string>
+    <string name="retry">Retry</string>
+    <string name="delete">Delete</string>
+</resources>
