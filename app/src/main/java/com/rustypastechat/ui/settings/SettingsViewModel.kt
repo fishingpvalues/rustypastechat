@@ -16,7 +16,9 @@ data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
     val isSaved: Boolean = false,
     val isTesting: Boolean = false,
-    val testResult: String? = null
+    val testResult: String? = null,
+    val cacheSize: String = "0 KB",
+    val pasteCount: Int = 0
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -98,5 +100,32 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update { it.copy(isTesting = false, testResult = "Connection error: ${e.message}") }
             }
         }
+    }
+
+    fun clearCache(application: Application) {
+        viewModelScope.launch {
+            val cacheDir = application.cacheDir
+            var size = 0L
+            cacheDir.deleteRecursively()
+            _uiState.update { it.copy(cacheSize = "0 KB") }
+        }
+    }
+
+    fun fetchStats(application: Application) {
+        viewModelScope.launch {
+            // Cache size
+            val cacheDir = application.cacheDir
+            val cacheSize = if (cacheDir.exists()) {
+                cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            } else 0L
+            _uiState.update { it.copy(cacheSize = formatBytes(cacheSize)) }
+        }
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes.toDouble() / (1024 * 1024))} MB"
+        else -> "${"%.1f".format(bytes.toDouble() / (1024 * 1024 * 1024))} GB"
     }
 }

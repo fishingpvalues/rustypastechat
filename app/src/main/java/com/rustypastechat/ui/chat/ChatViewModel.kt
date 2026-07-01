@@ -37,7 +37,11 @@ data class ChatUiState(
     val historyLoaded: Boolean = false,
     val replyTarget: ReplyTarget? = null,
     val isOneshotMode: Boolean = false,
-    val messageTtlSeconds: Long = 0L // 0 = no expiry
+    val messageTtlSeconds: Long = 0L,
+    val searchQuery: String = "",
+    val isSearchMode: Boolean = false,
+    val editingMessageId: String? = null,
+    val editingMessageText: String = ""
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -99,6 +103,76 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMessageTtl(seconds: Long) {
         _uiState.update { it.copy(messageTtlSeconds = if (it.messageTtlSeconds == seconds) 0L else seconds) }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun toggleSearchMode() {
+        _uiState.update { it.copy(isSearchMode = !it.isSearchMode, searchQuery = "", editingMessageId = null) }
+    }
+
+    fun startEditingMessage(messageId: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        if (!msg.isOutgoing) return
+        _uiState.update { it.copy(editingMessageId = messageId, editingMessageText = msg.text) }
+    }
+
+    fun cancelEditing() {
+        _uiState.update { it.copy(editingMessageId = null, editingMessageText = "") }
+    }
+
+    fun updateEditingText(text: String) {
+        _uiState.update { it.copy(editingMessageText = text) }
+    }
+
+    fun saveEditedMessage() {
+        val id = _uiState.value.editingMessageId ?: return
+        val newText = _uiState.value.editingMessageText.trim()
+        if (newText.isBlank()) return
+
+        val msg = _uiState.value.messages.find { it.id == id } ?: return
+        _uiState.update { state ->
+            val updated = state.messages.map { m ->
+                if (m.id == id) m.copy(text = newText, status = MessageStatus.SENDING) else m
+            }
+            state.copy(messages = updated, editingMessageId = null, editingMessageText = "")
+        }
+
+        // Re-upload edited message to paste server
+        viewModelScope.launch {
+            val fileName = msg.pasteFileName ?: Message.buildFileName(System.currentTimeMillis(), true, id)
+            pasteRepository.uploadText(newText, fileName)
+                .onSuccess {
+                    _uiState.update { state ->
+                        val updated = state.messages.map { m ->
+                            if (m.id == id) m.copy(status = MessageStatus.DELIVERED, pasteFileName = fileName) else m
+                        }
+                        state.copy(messages = updated)
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update { state ->
+                        val updated = state.messages.map { m ->
+                            if (m.id == id) m.copy(status = MessageStatus.FAILED) else m
+                        }
+                        state.copy(messages = updated, error = e.message)
+                    }
+                }
+        }
+    }
+
+    fun getFilteredMessages(): List<Message> {
+        val query = _uiState.value.searchQuery.trim().lowercase()
+        val all = _uiState.value.messages
+        if (query.isBlank()) return all
+        return all.filter { it.text.lowercase().contains(query) }
+    }
+
+    fun insertFormatting(marker: String) {
+        val text = _uiState.value.typingMessage
+        _uiState.update { it.copy(typingMessage = text + marker) }
     }
 
     // ── Send messages ────────────────────────────────────────────────────────

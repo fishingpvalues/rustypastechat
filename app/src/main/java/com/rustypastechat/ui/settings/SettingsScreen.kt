@@ -1,5 +1,6 @@
 package com.rustypastechat.ui.settings
 
+import android.app.Application
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -63,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -70,6 +72,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustypastechat.ui.components.GlassCard
 import com.rustypastechat.ui.components.GlassShape
 import com.rustypastechat.ui.theme.Blue
+import java.io.File
 
 private sealed class SettingsPage(val ordinal: Int) {
     object Main : SettingsPage(0)
@@ -139,6 +142,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
+    val context = LocalContext.current
 
     AnimatedContent(
         targetState = currentPage.ordinal,
@@ -162,7 +166,10 @@ fun SettingsScreen(
                 onAbout = { currentPage = SettingsPage.About },
                 llmEnabled = uiState.settings.llmEnabled,
                 hasServerUrl = uiState.settings.pasteServerUrl.isNotBlank(),
-                biometricEnabled = uiState.settings.biometricEnabled
+                biometricEnabled = uiState.settings.biometricEnabled,
+                uiState = uiState,
+                onClearCache = { viewModel.clearCache(context.applicationContext as Application) },
+                onFetchStats = { viewModel.fetchStats(context.applicationContext as Application) }
             )
             SettingsPage.Server -> ServerPage(
                 uiState = uiState,
@@ -201,11 +208,14 @@ private fun MainPage(
     onNavigateBack: () -> Unit,
     onServerSettings: () -> Unit,
     onLlmSettings: () -> Unit,
-    onAbout: () -> Unit,
     onSecuritySettings: () -> Unit,
+    onAbout: () -> Unit,
     llmEnabled: Boolean,
     hasServerUrl: Boolean,
-    biometricEnabled: Boolean
+    biometricEnabled: Boolean,
+    uiState: SettingsUiState,
+    onClearCache: () -> Unit,
+    onFetchStats: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -291,6 +301,29 @@ private fun MainPage(
                         title = "Biometric Lock",
                         subtitle = if (biometricEnabled) "Enabled" else "Disabled",
                         onClick = onSecuritySettings
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            GlassCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(modifier = Modifier.padding(4.dp)) {
+                    Text(
+                        text = "Data",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+                    )
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Delete,
+                        title = "Cache",
+                        subtitle = uiState.cacheSize,
+                        onClick = { onFetchStats() }
                     )
                 }
             }
