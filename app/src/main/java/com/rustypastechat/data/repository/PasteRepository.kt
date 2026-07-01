@@ -111,19 +111,81 @@ class PasteRepository(
     suspend fun loadChatHistory(): Result<List<Message>> = withContext(Dispatchers.IO) {
         runCatching {
             val pastes = listFiles().getOrThrow()
-            val chatPastes = pastes
-                .filter { Message.isChatFile(it.fileName) }
-                .sortedBy { it.creationDateUtc ?: "" }
 
-            if (chatPastes.isEmpty()) return@runCatching emptyList<Message>()
+            // Separate chat files from imported/system files
+            val chatPastes = pastes.filter { Message.isChatFile(it.fileName) }
+            val otherPastes = pastes.filter { !Message.isChatFile(it.fileName) }
 
-            val messages = coroutineScope {
-                chatPastes.map { paste ->
-                    async { pasteToMessage(paste) }
+            // Only import other files if they haven't been imported before
+            // (we track this by checking if the content was already seen in chat)
+            val chatContentSet = mutableSetOf<String>()
+
+            // Process chat files first (ordered by creation date)
+            val chatOnlyPastes = chatPastes.sortedBy { it.creationDateUtc ?: "" }
+
+            val chatMessages = coroutineScope {
+                chatOnlyPastes.map { paste ->
+                    async {
+                        pasteToMessage(paste).also { msg ->
+                            msg?.text?.let { chatContentSet.add(it) }
+                        }
+                    }
                 }.awaitAll().filterNotNull()
             }
-            messages.sortedBy { it.timestamp }
+
+            // Process imported files: only include if content differs from chat messages
+            val importedPastes = otherPastes.sortedBy { it.creationDateUtc ?: "" }
+            val importedMessages = coroutineScope {
+                importedPastes.map { paste ->
+                    async { pasteToImportedMessage(paste, chatContentSet) }
+                }.awaitAll().filterNotNull()
+            }
+
+            // Merge and sort all messages by timestamp
+            (chatMessages + importedMessages).sortedBy { it.timestamp }
         }
+    }
+
+    private suspend fun pasteToImportedMessage(paste: PasteItem, existingContent: Set<String>): Message? {
+        // Skip directories and URL files (oneshot_url, url dirs)
+        if (paste.fileSize <= 0) return null
+
+        // Skip archived oneshot files (renamed with timestamp suffix)
+        if (paste.fileName.contains(".[0-9]".toRegex()) && paste.fileName.length > 20) return null
+
+        val content = getFileContent(paste.fileName).getOrNull() ?: return null
+        val text = String(content, Charsets.UTF_8)
+
+        // Skip if content already exists as a chat message
+        if (text in existingContent) return null
+
+        // Skip binary/large files (only show text pastes)
+        if (paste.fileSize > 100_000) return null
+
+        // Try to detect if this is text content
+        if (!text.all { it.isLetterOrDigit() || it.isWhitespace() || it in "!@#$%^&*()_+-=[]{}|;':\",./<>?`~" }) {
+            // Binary content, skip
+            return null
+        }
+
+        val creationTs = parseCreationTimestamp(paste.creationDateUtc)
+            ?: System.currentTimeMillis()
+
+        val settings = kotlinx.coroutines.runBlocking { preferencesManager.settingsFlow.first() }
+        val isMedia = paste.fileName.substringAfterLast('.', "").lowercase() in
+            listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
+
+        return Message(
+            id = "imported_${paste.fileName}",
+            text = if (isMedia) "[Image: ${paste.fileName}]" else text.take(500),
+            isOutgoing = false,
+            status = MessageStatus.DELIVERED,
+            timestamp = creationTs,
+            mediaUrl = if (isMedia) getFileUrl(settings, paste.fileName) else null,
+            mediaType = if (isMedia) MediaType.IMAGE else null,
+            pasteFileName = paste.fileName,
+            isImported = true
+        )
     }
 
     private suspend fun pasteToMessage(paste: PasteItem): Message? {

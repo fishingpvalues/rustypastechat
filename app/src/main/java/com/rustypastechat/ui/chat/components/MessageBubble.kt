@@ -158,8 +158,10 @@ private fun MessageBubbleContent(
     onForward: (String) -> Unit
 ) {
     val isOutgoing = message.isOutgoing
-    val bubbleColor = if (isOutgoing) BubbleOutgoing else BubbleIncoming
-    val textColor = if (isOutgoing) BubbleOutgoingText else BubbleIncomingText
+    val bubbleColor = if (message.isImported) Color(0xFFF0F4F8)
+        else if (isOutgoing) BubbleOutgoing else BubbleIncoming
+    val textColor = if (message.isImported) Color(0xFF5F6368)
+        else if (isOutgoing) BubbleOutgoingText else BubbleIncomingText
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
@@ -212,6 +214,11 @@ private fun MessageBubbleContent(
                 if (message.isOneshot) {
                     Spacer(Modifier.height(2.dp))
                     Text("View once", color = textColor.copy(alpha = 0.4f), fontSize = 10.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                }
+                if (message.isImported) {
+                    Spacer(Modifier.height(2.dp))
+                    Text("Imported", color = textColor.copy(alpha = 0.5f), fontSize = 10.sp,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                 }
 

@@ -25,7 +25,8 @@ data class Message(
     val replyToText: String? = null,
     val replyToIsOutgoing: Boolean? = null,
     val isOneshot: Boolean = false,
-    val expiresAt: Long? = null
+    val expiresAt: Long? = null,
+    val isImported: Boolean = false
 ) {
     companion object {
         const val CHAT_PREFIX = "c_"
