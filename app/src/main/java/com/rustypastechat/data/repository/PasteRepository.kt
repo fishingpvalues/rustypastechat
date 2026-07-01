@@ -4,13 +4,25 @@ import com.rustypastechat.data.api.ApiClientFactory
 import com.rustypastechat.data.api.PasteAuthInterceptor
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.Message
+import com.rustypastechat.data.model.MessageStatus
+import com.rustypastechat.data.model.ParsedFileName
 import com.rustypastechat.data.model.PasteItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
+import java.util.UUID
 
 class PasteRepository(
     private val preferencesManager: PreferencesManager
@@ -33,68 +45,128 @@ class PasteRepository(
         return api!!
     }
 
-    suspend fun listFiles(): Result<List<PasteItem>> {
-        runCatching {
-            val response = getApi().listFiles()
-            if (response.isSuccessful) {
-                return Result.success(response.body() ?: emptyList())
-            }
-            return Result.failure(Exception("List files failed: ${response.code()} ${response.message()}"))
-        }.getOrElse {
-            return Result.failure(it)
+    suspend fun listFiles(): Result<List<PasteItem>> = runCatching {
+        val response = getApi().listFiles()
+        if (response.isSuccessful) {
+            response.body() ?: emptyList()
+        } else {
+            throw Exception("List failed: ${response.code()}")
         }
     }
 
-    suspend fun uploadFile(filePath: String, fileName: String): Result<String> {
-        runCatching {
-            val file = File(filePath)
-            if (!file.exists()) {
-                return Result.failure(Exception("File not found"))
-            }
-            val mimeType = file.toURI().toURL().openConnection().contentType
-                ?: "application/octet-stream"
-            val requestBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
-            val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
-            val response = getApi().uploadFile(filePart)
-            if (response.isSuccessful) {
-                val url = response.body()?.string()?.trim() ?: fileName
-                return Result.success(url)
-            }
-            return Result.failure(Exception("Upload failed: ${response.code()} ${response.message()}"))
-        }.getOrElse {
-            return Result.failure(it)
+    suspend fun uploadFile(filePath: String, fileName: String): Result<String> = runCatching {
+        val file = File(filePath)
+        if (!file.exists()) throw Exception("File not found")
+        val mimeType = file.toURI().toURL().openConnection().contentType
+            ?: "application/octet-stream"
+        val requestBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
+        val response = getApi().uploadFile(filePart)
+        if (response.isSuccessful) {
+            response.body()?.string()?.trim() ?: fileName
+        } else {
+            throw Exception("Upload failed: ${response.code()}")
         }
     }
 
-    suspend fun uploadText(text: String, fileName: String): Result<String> {
-        runCatching {
-            val requestBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
-            val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
-            val response = getApi().uploadFile(filePart)
-            if (response.isSuccessful) {
-                val url = response.body()?.string()?.trim() ?: fileName
-                return Result.success(url)
-            }
-            return Result.failure(Exception("Upload failed: ${response.code()} ${response.message()}"))
-        }.getOrElse {
-            return Result.failure(it)
+    suspend fun uploadText(text: String, fileName: String): Result<String> = runCatching {
+        val requestBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
+        val response = getApi().uploadFile(filePart)
+        if (response.isSuccessful) {
+            response.body()?.string()?.trim() ?: fileName
+        } else {
+            throw Exception("Upload failed: ${response.code()}")
         }
     }
 
-    suspend fun getFileContent(filename: String): Result<ByteArray> {
-        runCatching {
-            val response = getApi().getFile(filename)
-            if (response.isSuccessful) {
-                return Result.success(response.body()?.bytes() ?: ByteArray(0))
-            }
-            return Result.failure(Exception("Download failed: ${response.code()} ${response.message()}"))
-        }.getOrElse {
-            return Result.failure(it)
+    suspend fun getFileContent(filename: String): Result<ByteArray> = runCatching {
+        val response = getApi().getFile(filename)
+        if (response.isSuccessful) {
+            response.body()?.bytes() ?: ByteArray(0)
+        } else {
+            throw Exception("Download failed: ${response.code()}")
         }
     }
 
     fun getFileUrl(settings: AppSettings, filename: String): String {
         val base = settings.pasteServerUrl.trimEnd('/')
         return "$base/$filename"
+    }
+
+    // ── Chat history reconstruction ─────────────────────────────────────────
+
+    suspend fun loadChatHistory(): Result<List<Message>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val pastes = listFiles().getOrThrow()
+            val chatPastes = pastes
+                .filter { Message.isChatFile(it.fileName) }
+                .sortedBy { it.creationDateUtc ?: "" }
+
+            if (chatPastes.isEmpty()) return@runCatching emptyList<Message>()
+
+            val messages = coroutineScope {
+                chatPastes.map { paste ->
+                    async {
+                        pasteToMessage(paste)
+                    }
+                }.awaitAll().filterNotNull()
+            }
+
+            messages.sortedBy { it.timestamp }
+        }
+    }
+
+    private suspend fun pasteToMessage(paste: PasteItem): Message? {
+        val parsed = Message.parseFromFileName(paste.fileName)
+            ?: return null
+
+        val content = getFileContent(paste.fileName).getOrNull()
+            ?: return null
+
+        val text = String(content, Charsets.UTF_8)
+
+        val isMedia = parsed.isMedia || paste.fileName.let { name ->
+            val ext = name.substringAfterLast('.', "").lowercase()
+            ext in listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
+        }
+
+        val mediaUrl = if (isMedia) {
+            val settings = kotlinx.coroutines.runBlocking {
+                preferencesManager.settingsFlow.first()
+            }
+            getFileUrl(settings, paste.fileName)
+        } else null
+
+        val creationTs = parseCreationTimestamp(paste.creationDateUtc) ?: parsed.timestamp
+
+        return Message(
+            id = paste.fileName,
+            text = text,
+            isOutgoing = parsed.isOutgoing,
+            status = MessageStatus.DELIVERED,
+            timestamp = creationTs,
+            mediaUrl = mediaUrl,
+            mediaType = if (isMedia) com.rustypastechat.data.model.MediaType.IMAGE else null,
+            pasteFileName = paste.fileName,
+            isLlmResponse = !parsed.isOutgoing
+        )
+    }
+
+    private fun parseCreationTimestamp(dateStr: String?): Long? {
+        if (dateStr.isNullOrBlank()) return null
+        return try {
+            val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+            fmt.timeZone = TimeZone.getTimeZone("UTC")
+            fmt.parse(dateStr)?.time
+        } catch (_: Exception) {
+            try {
+                val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
+                fmt.timeZone = TimeZone.getTimeZone("UTC")
+                fmt.parse(dateStr)?.time
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
 }
