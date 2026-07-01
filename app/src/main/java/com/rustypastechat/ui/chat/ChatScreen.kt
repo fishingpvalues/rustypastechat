@@ -21,21 +21,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Reply
-import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,12 +62,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustypastechat.ui.chat.components.EmptyChatState
-import com.rustypastechat.ui.chat.components.MessageBubble
 import com.rustypastechat.ui.chat.components.MessageInput
+import com.rustypastechat.ui.chat.components.SwipeableMessageBubble
 import com.rustypastechat.ui.chat.components.TypingIndicator
 import com.rustypastechat.ui.theme.Blue
-
-private val TTL_OPTIONS = listOf(0L to "Off", 60L to "1m", 300L to "5m", 3600L to "1h", 86400L to "1d")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,7 +77,9 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     var deleteConfirmId by remember { mutableStateOf<String?>(null) }
-    var showMoreMenu by remember { mutableStateOf(false) }
+    var overflowMenuExpanded by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val isSelectMode = selectedIds.isNotEmpty()
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) listState.animateScrollToItem(uiState.messages.size - 1)
@@ -92,7 +93,7 @@ fun ChatScreen(
         AlertDialog(
             onDismissRequest = { deleteConfirmId = null },
             title = { Text("Delete message") },
-            text = { Text("Remove this message from the chat and server?") },
+            text = { Text("Remove this message from the chat and paste server?") },
             confirmButton = {
                 TextButton(onClick = { viewModel.deleteMessage(msgId); deleteConfirmId = null }) { Text("Delete") }
             },
@@ -102,79 +103,147 @@ fun ChatScreen(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("RustyPaste Chat", style = MaterialTheme.typography.titleMedium)
-                        AnimatedVisibility(visible = uiState.isLlmTyping) {
-                            Text("AI typing...", style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (isSelectMode) {
+                // Select mode top bar (Google Messages pattern)
+                CenterAlignedTopAppBar(
+                    title = { Text("${selectedIds.size} selected") },
+                    navigationIcon = {
+                        IconButton(onClick = { selectedIds = emptySet() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close")
                         }
-                    }
-                },
-                actions = {
-                    if (uiState.isConnected && !uiState.isLoading) {
-                        IconButton(onClick = { viewModel.loadChatHistory() }, enabled = !uiState.isRefreshing) {
-                            if (uiState.isRefreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Refresh, "Refresh")
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            selectedIds.forEach { viewModel.copyMessage(it) }
+                            selectedIds = emptySet()
+                        }) { Icon(Icons.Default.ContentCopy, "Copy") }
+                        IconButton(onClick = {
+                            selectedIds.forEach { viewModel.forwardMessage(it) }
+                            selectedIds = emptySet()
+                        }) { Icon(Icons.Default.Forward, "Forward") }
+                        IconButton(onClick = {
+                            selectedIds.forEach { viewModel.deleteMessage(it) }
+                            selectedIds = emptySet()
+                        }) { Icon(Icons.Default.Delete, "Delete") }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                )
+            } else {
+                // Normal top bar (Google Messages: title left, actions right)
+                CenterAlignedTopAppBar(
+                    title = {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("RustyPaste Chat", style = MaterialTheme.typography.titleMedium)
+                            AnimatedVisibility(visible = uiState.isLlmTyping) {
+                                Text("AI typing...", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
-                    }
-                    IconButton(onClick = onNavigateToSettings) { Icon(Icons.Default.MoreVert, "Settings") }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
+                    },
+                    actions = {
+                        if (uiState.isConnected && !uiState.isLoading) {
+                            IconButton(onClick = { viewModel.loadChatHistory() }, enabled = !uiState.isRefreshing) {
+                                if (uiState.isRefreshing)
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                else Icon(Icons.Default.Search, "Search")
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { overflowMenuExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, "More options")
+                            }
+                            DropdownMenu(
+                                expanded = overflowMenuExpanded,
+                                onDismissRequest = { overflowMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Refresh chat") },
+                                    onClick = { viewModel.loadChatHistory(); overflowMenuExpanded = false },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("View once mode") },
+                                    onClick = { viewModel.toggleOneshotMode(); overflowMenuExpanded = false },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Whatshot, null,
+                                            tint = if (uiState.isOneshotMode) Blue else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        val ttl = uiState.messageTtlSeconds
+                                        Text(if (ttl > 0) "Expiry: ${formatTtl(ttl)}" else "Message expiry")
+                                    },
+                                    onClick = {
+                                        viewModel.setMessageTtl(
+                                            when (uiState.messageTtlSeconds) { 0L -> 300L; 300L -> 3600L; 3600L -> 86400L; else -> 0L }
+                                        ); overflowMenuExpanded = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Timer, null,
+                                            tint = if (uiState.messageTtlSeconds > 0) Blue else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    onClick = { onNavigateToSettings(); overflowMenuExpanded = false },
+                                    leadingIcon = { Icon(Icons.Default.MoreVert, null) }
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Column {
-                // Reply bar
-                AnimatedVisibility(
-                    visible = uiState.replyTarget != null,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                ) {
-                    uiState.replyTarget?.let { reply ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Reply, null, tint = Blue, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    if (reply.isOutgoing) "Replying to yourself" else "Replying",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Blue, fontWeight = FontWeight.SemiBold
-                                )
-                                Text(reply.text, style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!isSelectMode) {
+                Column {
+                    // Reply bar
+                    AnimatedVisibility(
+                        visible = uiState.replyTarget != null,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                    ) {
+                        uiState.replyTarget?.let { reply ->
+                            Row(
+                                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Reply, null, tint = Blue, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(if (reply.isOutgoing) "Replying to yourself" else "Replying",
+                                        style = MaterialTheme.typography.labelSmall, color = Blue, fontWeight = FontWeight.SemiBold)
+                                    Text(reply.text, style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                TextButton(onClick = { viewModel.setReplyTarget(null) }) { Text("Cancel") }
                             }
-                            TextButton(onClick = { viewModel.setReplyTarget(null) }) { Text("Cancel") }
                         }
                     }
+                    MessageInput(
+                        value = uiState.typingMessage,
+                        onValueChange = viewModel::updateTypingMessage,
+                        onSend = viewModel::sendTextMessage,
+                        onMediaSelected = { uri ->
+                            viewModel.sendMediaMessage(uri.toString(), "img_${System.currentTimeMillis()}.jpg")
+                        },
+                        enabled = uiState.isConnected
+                    )
                 }
-                MessageInput(
-                    value = uiState.typingMessage,
-                    onValueChange = viewModel::updateTypingMessage,
-                    onSend = viewModel::sendTextMessage,
-                    onMediaSelected = { uri ->
-                        viewModel.sendMediaMessage(uri.toString(), "image_${System.currentTimeMillis()}.jpg")
-                    },
-                    enabled = uiState.isConnected,
-                    isOneshotMode = uiState.isOneshotMode,
-                    onToggleOneshot = { viewModel.toggleOneshotMode() },
-                    ttlSeconds = uiState.messageTtlSeconds,
-                    onSetTtl = { viewModel.setMessageTtl(it) }
-                )
             }
         }
     ) { innerPadding ->
         Box(
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(innerPadding)
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(innerPadding)
         ) {
             when {
                 uiState.isLoading && !uiState.historyLoaded -> {
@@ -182,7 +251,7 @@ fun ChatScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(8.dp))
-                            Text("Loading chat history...", style = MaterialTheme.typography.bodySmall,
+                            Text("Loading chat...", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -199,13 +268,18 @@ fun ChatScreen(
                             modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)
                         ) {
                             items(items = uiState.messages, key = { it.id }) { message ->
-                                MessageBubble(
+                                SwipeableMessageBubble(
                                     message = message,
+                                    isSelected = message.id in selectedIds,
                                     onRetry = { viewModel.retryMessage(it) },
                                     onDelete = { deleteConfirmId = it },
                                     onCopy = { viewModel.copyMessage(it) },
                                     onReply = { viewModel.replyToMessage(it) },
-                                    onForward = { viewModel.forwardMessage(it) }
+                                    onForward = { viewModel.forwardMessage(it) },
+                                    onLongPress = { id ->
+                                        selectedIds = if (id in selectedIds) selectedIds - id
+                                        else selectedIds + id
+                                    }
                                 )
                             }
                             if (uiState.isLlmTyping) {
@@ -218,4 +292,11 @@ fun ChatScreen(
             }
         }
     }
+}
+
+private fun formatTtl(seconds: Long): String = when {
+    seconds < 120 -> "${seconds}s"
+    seconds < 7200 -> "${seconds / 60}min"
+    seconds < 172800 -> "${seconds / 3600}h"
+    else -> "${seconds / 86400}d"
 }

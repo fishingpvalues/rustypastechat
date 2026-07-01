@@ -1,7 +1,12 @@
 package com.rustypastechat.ui.chat.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,22 +14,33 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Forward
+import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -32,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -42,59 +59,136 @@ import com.rustypastechat.ui.theme.BubbleIncoming
 import com.rustypastechat.ui.theme.BubbleIncomingText
 import com.rustypastechat.ui.theme.BubbleOutgoing
 import com.rustypastechat.ui.theme.BubbleOutgoingText
+import com.rustypastechat.ui.theme.Green
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.regex.Pattern
+import kotlin.math.roundToInt
 
 private val URL_PATTERN = Pattern.compile("(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+)")
 
 @Composable
-fun MessageBubble(
+fun SwipeableMessageBubble(
     message: Message,
+    isSelected: Boolean = false,
     onRetry: (String) -> Unit,
     onDelete: (String) -> Unit,
     onCopy: (String) -> Unit = {},
     onReply: (String) -> Unit = {},
     onForward: (String) -> Unit = {},
+    onLongPress: (String) -> Unit = {},
     modifier: Modifier = Modifier
+) {
+    var swipeOffset by remember { mutableFloatStateOf(0f) }
+    val swipeThreshold = 120f
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        // Swipe action backgrounds
+        if (swipeOffset > 30f) {
+            // Swiped right → Reply action
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 12.dp)
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Green.copy(alpha = 0.9f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Reply, "Reply", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+        if (swipeOffset < -30f) {
+            // Swiped left → Delete action
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFEA4335).copy(alpha = 0.9f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Delete, "Delete", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+
+        // Main bubble content
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+                .pointerInput(message.id) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (swipeOffset > swipeThreshold) onReply(message.id)
+                            else if (swipeOffset < -swipeThreshold) onDelete(message.id)
+                            swipeOffset = 0f
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            swipeOffset = (swipeOffset + dragAmount).coerceIn(-200f, 200f)
+                        }
+                    )
+                }
+                .clickable(enabled = !isSelected) {
+                    onLongPress(message.id)
+                }
+        ) {
+            MessageBubbleContent(
+                message = message,
+                isSelected = isSelected,
+                onRetry = onRetry,
+                onDelete = onDelete,
+                onCopy = onCopy,
+                onReply = onReply,
+                onForward = onForward
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageBubbleContent(
+    message: Message,
+    isSelected: Boolean,
+    onRetry: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onCopy: (String) -> Unit,
+    onReply: (String) -> Unit,
+    onForward: (String) -> Unit
 ) {
     val isOutgoing = message.isOutgoing
     val bubbleColor = if (isOutgoing) BubbleOutgoing else BubbleIncoming
     val textColor = if (isOutgoing) BubbleOutgoingText else BubbleIncomingText
-    val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val timeText = timeFormatter.format(Date(message.timestamp))
+    val timeText = remember(message.timestamp) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
+    }
     val rowAlignment = if (isOutgoing) Alignment.End else Alignment.Start
-
     val bubbleShape = if (isOutgoing) {
         RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
     } else {
         RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
     }
 
+    val bg = if (isSelected) bubbleColor.copy(alpha = 0.6f) else bubbleColor
+
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
         horizontalAlignment = rowAlignment
     ) {
         // Reply preview
         if (!message.replyToText.isNullOrBlank()) {
-            ReplyPreview(
-                text = message.replyToText,
-                isOutgoing = message.replyToIsOutgoing ?: false,
-                maxWidth = 280.dp,
-                alignment = rowAlignment
-            )
+            ReplyPreview(message.replyToText, message.replyToIsOutgoing ?: false)
         }
 
         Box(
             modifier = Modifier
                 .widthIn(min = 60.dp, max = 280.dp)
                 .clip(bubbleShape)
-                .background(bubbleColor)
+                .background(bg)
                 .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)
         ) {
             Column {
-                // Media
                 if (!message.mediaUrl.isNullOrBlank() && message.mediaType != com.rustypastechat.data.model.MediaType.FILE) {
                     AsyncImage(
                         model = message.mediaUrl,
@@ -105,30 +199,28 @@ fun MessageBubble(
                     Spacer(Modifier.height(4.dp))
                 }
 
-                // Text with clickable links
                 if (message.text.isNotBlank()) {
-                    RichTextContent(text = message.text, textColor = textColor)
+                    RichTextContent(message.text, textColor)
                 } else if (message.isLlmResponse && message.status != MessageStatus.FAILED) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BubbleIncomingText)
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = BubbleIncomingText)
                         Spacer(Modifier.width(8.dp))
                         Text("Thinking...", color = BubbleIncomingText.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
-                // Oneshot indicator
                 if (message.isOneshot) {
                     Spacer(Modifier.height(2.dp))
-                    Text("View once", color = textColor.copy(alpha = 0.4f), fontSize = 10.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                    Text("View once", color = textColor.copy(alpha = 0.4f), fontSize = 10.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                 }
 
-                // Timestamp + status
                 Row(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End
                 ) {
-                    Text(text = timeText, color = textColor.copy(alpha = 0.5f), fontSize = 11.sp)
+                    Text(timeText, color = textColor.copy(alpha = 0.5f), fontSize = 11.sp)
                     if (isOutgoing) {
                         Spacer(Modifier.width(4.dp))
                         MessageStatusIcon(status = message.status)
@@ -137,45 +229,35 @@ fun MessageBubble(
             }
         }
 
-        // Actions below bubble
-        MessageActions(
-            isOutgoing = isOutgoing,
-            alignment = rowAlignment,
-            message = message,
-            onCopy = onCopy,
-            onReply = onReply,
-            onForward = onForward,
-            onRetry = onRetry,
-            onDelete = onDelete
-        )
+        // Error state
+        if (message.status == MessageStatus.FAILED && isOutgoing) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                Icon(Icons.Default.ErrorOutline, "Error", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Failed", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                Spacer(Modifier.width(8.dp))
+                Text("Retry", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium, modifier = Modifier.clickable { onRetry(message.id) })
+                Spacer(Modifier.width(8.dp))
+                Text("Delete", color = MaterialTheme.colorScheme.outline, fontSize = 11.sp,
+                    modifier = Modifier.clickable { onDelete(message.id) })
+            }
+        }
     }
 }
 
 @Composable
-private fun ReplyPreview(text: String, isOutgoing: Boolean, maxWidth: androidx.compose.ui.unit.Dp, alignment: Alignment.Horizontal) {
-    val barColor = if (isOutgoing) BubbleOutgoing else Blue
-    Box(
-        modifier = Modifier
-            .widthIn(max = maxWidth)
-            .padding(bottom = 2.dp)
-    ) {
-        Row(modifier = Modifier.padding(start = 4.dp)) {
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(32.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(barColor)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+private fun ReplyPreview(text: String, isOutgoing: Boolean) {
+    Row(modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)) {
+        Box(
+            Modifier.width(3.dp).height(32.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (isOutgoing) BubbleOutgoing else Blue)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -188,46 +270,13 @@ private fun RichTextContent(text: String, textColor: Color) {
             val start = matcher.start()
             val end = matcher.end()
             if (start > lastEnd) append(text.substring(lastEnd, start))
-            withStyle(SpanStyle(color = Color(0xFF64B5F6), textDecoration = TextDecoration.Underline)) {
+            withStyle(SpanStyle(color = Color(0xFF8AB4F8), textDecoration = TextDecoration.Underline)) {
                 append(matcher.group())
             }
             lastEnd = end
         }
         if (lastEnd < text.length) append(text.substring(lastEnd))
     }
-    Text(
-        text = annotated,
-        color = textColor,
-        style = MaterialTheme.typography.bodyLarge,
-        modifier = Modifier.padding(end = 36.dp)
-    )
-}
-
-@Composable
-private fun MessageActions(
-    isOutgoing: Boolean,
-    alignment: Alignment.Horizontal,
-    message: Message,
-    onCopy: (String) -> Unit,
-    onReply: (String) -> Unit,
-    onForward: (String) -> Unit,
-    onRetry: (String) -> Unit,
-    onDelete: (String) -> Unit
-) {
-    if (message.status == MessageStatus.FAILED && isOutgoing) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 2.dp)
-        ) {
-            Icon(Icons.Default.ErrorOutline, "Error", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Failed to send", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
-            Spacer(Modifier.width(8.dp))
-            Text("Retry", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp,
-                fontWeight = FontWeight.Medium, modifier = Modifier.clickable { onRetry(message.id) })
-            Spacer(Modifier.width(8.dp))
-            Text("Delete", color = MaterialTheme.colorScheme.outline, fontSize = 11.sp,
-                modifier = Modifier.clickable { onDelete(message.id) })
-        }
-    }
+    Text(annotated, color = textColor, style = MaterialTheme.typography.bodyLarge,
+        modifier = Modifier.padding(end = 36.dp))
 }
