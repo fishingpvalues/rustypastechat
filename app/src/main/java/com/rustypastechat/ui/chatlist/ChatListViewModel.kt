@@ -7,6 +7,7 @@ import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.ChatThread
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.repository.PasteRepository
+import com.rustypastechat.util.FuzzySearch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,8 +17,12 @@ import java.util.UUID
 
 data class ChatListState(
     val chats: List<ChatThread> = emptyList(),
+    val allMessages: List<Message> = emptyList(),
     val isLoading: Boolean = false,
     val isConnected: Boolean = false,
+    val searchQuery: String = "",
+    val searchResults: List<Message> = emptyList(),
+    val isSearching: Boolean = false,
     val error: String? = null
 )
 
@@ -41,11 +46,27 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         pasteRepo.loadChatHistory(Message.DEFAULT_CHAT)
             .onSuccess { messages ->
                 val chats = groupMessagesByChat(messages)
-                _state.update { it.copy(chats = chats, isLoading = false) }
+                _state.update { it.copy(chats = chats, allMessages = messages, isLoading = false) }
             }
             .onFailure { e ->
                 _state.update { it.copy(isLoading = false, error = e.message) }
             }
+    }
+
+    fun setSearchQuery(query: String) {
+        _state.update { it.copy(searchQuery = query, isSearching = query.isNotBlank()) }
+        if (query.isBlank()) {
+            _state.update { it.copy(searchResults = emptyList()) }
+            return
+        }
+        val results = _state.value.allMessages.filter { msg ->
+            msg.text.isNotBlank() && FuzzySearch.search(query, msg.text)
+        }
+        _state.update { it.copy(searchResults = results) }
+    }
+
+    fun clearSearch() {
+        _state.update { it.copy(searchQuery = "", searchResults = emptyList(), isSearching = false) }
     }
 
     fun createChat(name: String) = viewModelScope.launch {

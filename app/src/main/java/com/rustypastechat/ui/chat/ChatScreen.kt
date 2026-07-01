@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Reply
@@ -48,6 +51,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -64,14 +68,16 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,15 +85,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustypastechat.ui.chat.components.EmptyChatState
+import com.rustypastechat.ui.chat.components.AnimatedTypingIndicator
 import com.rustypastechat.ui.chat.components.MessageInput
 import com.rustypastechat.ui.chat.components.SwipeableMessageBubble
-import com.rustypastechat.ui.chat.components.TypingIndicator
+import com.rustypastechat.ui.chat.components.formatDateHeader
+import com.rustypastechat.ui.chat.components.shouldShowDateHeader
 import com.rustypastechat.ui.theme.Blue
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     onNavigateToSettings: () -> Unit,
+    onNavigateBack: () -> Unit = {},
     viewModel: ChatViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -100,6 +110,12 @@ fun ChatScreen(
     val editedId = uiState.editingMessageId
 
     val displayMessages = if (uiState.searchQuery.isNotBlank()) viewModel.getFilteredMessages() else uiState.messages
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val showScrollFab by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 2 && displayMessages.size > 5 }
+    }
 
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) listState.animateScrollToItem(uiState.messages.size - 1)
@@ -228,6 +244,21 @@ fun ChatScreen(
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showScrollFab,
+                enter = fadeIn(androidx.compose.animation.core.tween(200)),
+                exit = fadeOut(androidx.compose.animation.core.tween(200))
+            ) {
+                FloatingActionButton(
+                    onClick = { coroutineScope.launch { listState.animateScrollToItem(displayMessages.size - 1) } },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, "Scroll to bottom", Modifier.size(22.dp))
+                }
+            }
+        },
         bottomBar = {
             if (!isSelectMode && !uiState.isSearchMode) {
                 Column {
@@ -328,11 +359,12 @@ fun ChatScreen(
                                     onReply = { viewModel.replyToMessage(it) },
                                     onForward = { viewModel.forwardMessage(it) },
                                     onLongPress = { id ->
+                                        android.util.Log.d("ChatScreen", "long press: $id")
                                         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
                                     }
                                 )
                             }
-                            if (uiState.isLlmTyping) item(key = "typing") { TypingIndicator() }
+                            if (uiState.isLlmTyping) item(key = "typing") { AnimatedTypingIndicator() }
                             item(key = "spacer") { Spacer(Modifier.height(8.dp)) }
                         }
                     }

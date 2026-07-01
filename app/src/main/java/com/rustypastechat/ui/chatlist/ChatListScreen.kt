@@ -1,6 +1,10 @@
 package com.rustypastechat.ui.chatlist
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,19 +19,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,6 +57,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustypastechat.data.model.ChatThread
+import com.rustypastechat.data.model.Message
+import com.rustypastechat.ui.components.GlassCard
+import com.rustypastechat.ui.components.GlassShape
 import com.rustypastechat.ui.theme.Blue
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -54,22 +70,71 @@ import java.util.Locale
 fun ChatListScreen(
     onChatClick: (String) -> Unit,
     onSettings: () -> Unit,
+    onCamera: () -> Unit = {},
     viewModel: ChatListViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newChatName by remember { mutableStateOf("") }
+    var overflowExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Chats", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium) },
-                actions = {
-                    IconButton(onClick = { }) { Icon(Icons.Default.Search, "Search") }
-                    IconButton(onClick = onSettings) { Icon(Icons.Default.MoreVert, "Settings") }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
+            if (state.isSearching) {
+                TopAppBar(
+                    title = {
+                        OutlinedTextField(
+                            value = state.searchQuery,
+                            onValueChange = viewModel::setSearchQuery,
+                            placeholder = { Text("Search messages...", style = MaterialTheme.typography.bodyMedium) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent
+                            )
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { viewModel.clearSearch() }) {
+                            Icon(Icons.Default.Close, "Close search")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "RustyPaste Chat",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    actions = {
+                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                            Icon(Icons.Default.Search, "Search")
+                        }
+                        IconButton(onClick = onCamera) {
+                            Icon(Icons.Default.CameraAlt, "Camera")
+                        }
+                        Box {
+                            IconButton(onClick = { overflowExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, "More")
+                            }
+                            DropdownMenu(expanded = overflowExpanded, onDismissRequest = { overflowExpanded = false }) {
+                                DropdownMenuItem(text = { Text("New group") }, onClick = { showCreateDialog = true; overflowExpanded = false },
+                                    leadingIcon = { Icon(Icons.Default.Chat, null) })
+                                DropdownMenuItem(text = { Text("Settings") }, onClick = { onSettings(); overflowExpanded = false },
+                                    leadingIcon = { Icon(Icons.Default.Settings, null) })
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreateDialog = true }, containerColor = Blue) {
@@ -77,68 +142,62 @@ fun ChatListScreen(
             }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding).background(MaterialTheme.colorScheme.background)) {
             when {
-                state.isLoading && state.chats.isEmpty() -> {
+                state.isLoading && state.chats.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(8.dp))
-                            Text("Loading chats...", style = MaterialTheme.typography.bodySmall,
+                            CircularProgressIndicator(); Spacer(Modifier.height(8.dp))
+                            Text("Loading...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                state.isSearching -> {
+                    // Search results
+                    if (state.searchResults.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No results for \"${state.searchQuery}\"", style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-                }
-                state.chats.isEmpty() && !state.isLoading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No chats yet.\nSend a message to get started.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                else -> {
-                    LazyColumn(Modifier.fillMaxSize()) {
-                        items(state.chats, key = { it.id }) { chat ->
-                            ChatListItem(
-                                chat = chat,
-                                onClick = { onChatClick(chat.id) },
-                                onRename = { name -> viewModel.renameChat(chat.id, name) },
-                                onDelete = { viewModel.deleteChat(chat.id) }
-                            )
+                    } else {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(state.searchResults, key = { it.id }) { msg ->
+                                SearchResultItem(msg = msg, onClick = { msg.chatId?.let { onChatClick(it) } })
+                            }
                         }
                     }
                 }
+                state.chats.isEmpty() && !state.isLoading ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No chats yet.\nTap + to start.", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                else ->
+                    LazyColumn(Modifier.fillMaxSize().padding(top = 4.dp)) {
+                        items(state.chats, key = { it.id }) { chat ->
+                            ChatListItem(chat = chat, onClick = { onChatClick(chat.id) })
+                        }
+                    }
             }
         }
     }
 
     if (showCreateDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("New Chat") },
+        AlertDialog(onDismissRequest = { showCreateDialog = false }, title = { Text("New Chat") },
             text = {
-                androidx.compose.material3.OutlinedTextField(
-                    value = newChatName, onValueChange = { newChatName = it },
-                    label = { Text("Chat name") }, singleLine = true
-                )
+                OutlinedTextField(value = newChatName, onValueChange = { newChatName = it },
+                    label = { Text("Chat name") }, singleLine = true)
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    if (newChatName.isNotBlank()) {
-                        viewModel.createChat(newChatName)
-                        newChatName = ""; showCreateDialog = false
-                    }
+                TextButton(onClick = {
+                    if (newChatName.isNotBlank()) { viewModel.createChat(newChatName); newChatName = ""; showCreateDialog = false }
                 }) { Text("Create") }
             },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
-            }
-        )
+            dismissButton = { TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") } })
     }
 }
 
 @Composable
-private fun ChatListItem(chat: ChatThread, onClick: () -> Unit, onRename: (String) -> Unit, onDelete: () -> Unit) {
+private fun ChatListItem(chat: ChatThread, onClick: () -> Unit) {
     val timeText = remember(chat.lastTimestamp) {
         if (chat.lastTimestamp == 0L) ""
         else {
@@ -147,9 +206,15 @@ private fun ChatListItem(chat: ChatThread, onClick: () -> Unit, onRename: (Strin
         }
     }
 
-    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    GlassCard(
+        onClick = onClick,
+        shape = GlassShape.Small,
+        containerColor = MaterialTheme.colorScheme.surface,
+        borderAlpha = 0.04f,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -173,12 +238,36 @@ private fun ChatListItem(chat: ChatThread, onClick: () -> Unit, onRename: (Strin
                     Text(chat.lastMessage, style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (chat.messageCount > 0 && chat.lastMessage.isBlank()) {
+                } else if (chat.messageCount > 0) {
                     Text("${chat.messageCount} imported pastes", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultItem(msg: Message, onClick: () -> Unit) {
+    GlassCard(
+        onClick = onClick,
+        shape = GlassShape.Small,
+        containerColor = MaterialTheme.colorScheme.surface,
+        borderAlpha = 0.04f,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(
+                msg.text.take(120),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3, overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Chat: ${msg.chatId.take(8)} · ${SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date(msg.timestamp))}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
