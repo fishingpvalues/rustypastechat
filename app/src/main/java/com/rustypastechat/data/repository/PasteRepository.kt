@@ -108,7 +108,7 @@ class PasteRepository(
 
     // ── Chat history reconstruction ─────────────────────────────────────────
 
-    suspend fun loadChatHistory(): Result<List<Message>> = withContext(Dispatchers.IO) {
+    suspend fun loadChatHistory(chatId: String = Message.DEFAULT_CHAT): Result<List<Message>> = withContext(Dispatchers.IO) {
         runCatching {
             val pastes = listFiles().getOrThrow()
 
@@ -213,7 +213,8 @@ class PasteRepository(
             mediaUrl = mediaUrl,
             mediaType = if (isMedia) MediaType.IMAGE else null,
             pasteFileName = paste.fileName,
-            isLlmResponse = !parsed.isOutgoing
+            isLlmResponse = !parsed.isOutgoing,
+            chatId = parsed.chatId
         )
     }
 

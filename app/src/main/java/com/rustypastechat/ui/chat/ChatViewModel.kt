@@ -5,7 +5,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
 import com.rustypastechat.data.model.LlmMessage
@@ -44,7 +46,10 @@ data class ChatUiState(
     val editingMessageText: String = ""
 )
 
-class ChatViewModel(application: Application) : AndroidViewModel(application) {
+class ChatViewModel(
+    application: Application,
+    private val chatId: String = Message.DEFAULT_CHAT
+) : AndroidViewModel(application) {
 
     private val preferencesManager = PreferencesManager(application)
     private val pasteRepository = PasteRepository(preferencesManager)
@@ -142,7 +147,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // Re-upload edited message to paste server
         viewModelScope.launch {
-            val fileName = msg.pasteFileName ?: Message.buildFileName(System.currentTimeMillis(), true, id)
+            val fileName = msg.pasteFileName ?: Message.buildFileName(chatId, System.currentTimeMillis(), true, id)
             pasteRepository.uploadText(newText, fileName)
                 .onSuccess {
                     _uiState.update { state ->
@@ -183,7 +188,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val fileName = Message.buildFileName(now, true, messageId)
+        val fileName = Message.buildFileName(chatId, now, true, messageId)
         val reply = _uiState.value.replyTarget
         val isOneshot = _uiState.value.isOneshotMode
         val ttl = _uiState.value.messageTtlSeconds
@@ -237,7 +242,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val ext = fileNameOriginal.substringAfterLast('.', "jpg")
-        val fileName = Message.buildMediaFileName(now, messageId, ext)
+        val fileName = Message.buildMediaFileName(chatId, now, messageId, ext)
         val reply = _uiState.value.replyTarget
 
         val msg = Message(
@@ -320,7 +325,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             viewModelScope.launch {
                 val now = System.currentTimeMillis()
-                val fileName = msg.pasteFileName ?: Message.buildFileName(now, true, messageId)
+                val fileName = msg.pasteFileName ?: Message.buildFileName(chatId, now, true, messageId)
                 pasteRepository.uploadText(msg.text, fileName)
                     .onSuccess {
                         _uiState.update { state ->
@@ -394,7 +399,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (text.isBlank()) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            val fileName = Message.buildFileName(now, false, replyId)
+            val fileName = Message.buildFileName(chatId, now, false, replyId)
             pasteRepository.uploadText(text, fileName)
                 .onSuccess {
                     _uiState.update { state ->
@@ -421,5 +426,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+}
+
+class ChatViewModelFactory(private val chatId: String) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+        val app = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory
+            .getInstance(android.app.Application())
+        return ChatViewModel(app.create(modelClass).let { (it as? AndroidViewModel)?.getApplication() as android.app.Application }, chatId) as T
     }
 }

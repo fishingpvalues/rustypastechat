@@ -32,8 +32,8 @@ class ChatHistoryReconstructionTest {
     @Test
     fun `message filename parsing - outgoing`() {
         val ts = System.currentTimeMillis()
-        val fileName = Message.buildFileName(ts, true, "abc12345")
-        assertTrue(fileName.startsWith("c_"))
+        val fileName = Message.buildFileName(Message.DEFAULT_CHAT, ts, true, "abc12345")
+        assertTrue(fileName.startsWith(Message.CHAT_PREFIX))
         assertTrue(fileName.contains("_o_"))
         assertTrue(fileName.endsWith(".txt"))
 
@@ -47,7 +47,7 @@ class ChatHistoryReconstructionTest {
     @Test
     fun `message filename parsing - incoming`() {
         val ts = System.currentTimeMillis()
-        val fileName = Message.buildFileName(ts, false, "xyz98765")
+        val fileName = Message.buildFileName(Message.DEFAULT_CHAT, ts, false, "xyz98765")
         assertTrue(fileName.contains("_i_"))
 
         val parsed = Message.parseFromFileName(fileName)
@@ -59,7 +59,7 @@ class ChatHistoryReconstructionTest {
     @Test
     fun `message filename parsing - media`() {
         val ts = System.currentTimeMillis()
-        val fileName = Message.buildMediaFileName(ts, "img001", "jpg")
+        val fileName = Message.buildMediaFileName(Message.DEFAULT_CHAT, ts, "img001", "jpg")
         assertTrue(fileName.contains("_m_"))
         assertTrue(fileName.endsWith(".jpg"))
 
@@ -86,11 +86,11 @@ class ChatHistoryReconstructionTest {
     @Test
     fun `upload and reconstruct roundtrip`() = runBlocking {
         val ts = System.currentTimeMillis()
-        val outName = Message.buildFileName(ts, true, "rtt001")
+        val outName = Message.buildFileName(Message.DEFAULT_CHAT, ts, true, "rtt001")
         val outText = "Hello from test"
         repo.uploadText(outText, outName)
 
-        val inName = Message.buildFileName(ts + 1000, false, "rtt002")
+        val inName = Message.buildFileName(Message.DEFAULT_CHAT, ts + 1000, false, "rtt002")
         val inText = "Reply from test"
         repo.uploadText(inText, inName)
 
@@ -103,9 +103,9 @@ class ChatHistoryReconstructionTest {
     fun `reconstruct messages ordered by name timestamp`() = runBlocking {
         val base = System.currentTimeMillis()
 
-        repo.uploadText("msg1", Message.buildFileName(base, true, "o1"))
-        repo.uploadText("msg2", Message.buildFileName(base + 100, false, "i1"))
-        repo.uploadText("msg3", Message.buildFileName(base + 200, true, "o2"))
+        repo.uploadText("msg1", Message.buildFileName(Message.DEFAULT_CHAT, base, true, "o1"))
+        repo.uploadText("msg2", Message.buildFileName(Message.DEFAULT_CHAT, base + 100, false, "i1"))
+        repo.uploadText("msg3", Message.buildFileName(Message.DEFAULT_CHAT, base + 200, true, "o2"))
 
         val pastes = repo.listFiles().getOrThrow()
         val chatFiles = pastes
