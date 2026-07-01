@@ -4,6 +4,7 @@ import com.rustypastechat.data.api.ApiClientFactory
 import com.rustypastechat.data.api.PasteAuthInterceptor
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.MediaType
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.model.MessageStatus
 import com.rustypastechat.data.model.ParsedFileName
@@ -22,7 +23,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
-import java.util.UUID
 
 class PasteRepository(
     private val preferencesManager: PreferencesManager
@@ -47,11 +47,8 @@ class PasteRepository(
 
     suspend fun listFiles(): Result<List<PasteItem>> = runCatching {
         val response = getApi().listFiles()
-        if (response.isSuccessful) {
-            response.body() ?: emptyList()
-        } else {
-            throw Exception("List failed: ${response.code()}")
-        }
+        if (response.isSuccessful) response.body() ?: emptyList()
+        else throw Exception("List failed: ${response.code()}")
     }
 
     suspend fun uploadFile(filePath: String, fileName: String): Result<String> = runCatching {
@@ -62,31 +59,46 @@ class PasteRepository(
         val requestBody = file.asRequestBody(mimeType.toMediaTypeOrNull())
         val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
         val response = getApi().uploadFile(filePart)
-        if (response.isSuccessful) {
-            response.body()?.string()?.trim() ?: fileName
-        } else {
-            throw Exception("Upload failed: ${response.code()}")
-        }
+        if (response.isSuccessful) response.body()?.string()?.trim() ?: fileName
+        else throw Exception("Upload failed: ${response.code()}")
     }
 
     suspend fun uploadText(text: String, fileName: String): Result<String> = runCatching {
         val requestBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
         val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
         val response = getApi().uploadFile(filePart)
-        if (response.isSuccessful) {
-            response.body()?.string()?.trim() ?: fileName
-        } else {
-            throw Exception("Upload failed: ${response.code()}")
-        }
+        if (response.isSuccessful) response.body()?.string()?.trim() ?: fileName
+        else throw Exception("Upload failed: ${response.code()}")
+    }
+
+    suspend fun uploadTextWithExpiry(text: String, fileName: String, ttlSeconds: Long): Result<String> = runCatching {
+        val requestBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("file", fileName, requestBody)
+        val expireHeader = "${ttlSeconds}s"
+        val response = getApi().uploadFile(filePart, expire = expireHeader)
+        if (response.isSuccessful) response.body()?.string()?.trim() ?: fileName
+        else throw Exception("Upload with expiry failed: ${response.code()}")
+    }
+
+    suspend fun uploadOneshot(text: String, fileName: String): Result<String> = runCatching {
+        val requestBody = text.toRequestBody("text/plain".toMediaTypeOrNull())
+        val filePart = MultipartBody.Part.createFormData("oneshot", fileName, requestBody)
+        val oneshotField = fileName.toRequestBody("text/plain".toMediaTypeOrNull())
+        val response = getApi().uploadOneshot(filePart, oneshotField)
+        if (response.isSuccessful) response.body()?.string()?.trim() ?: fileName
+        else throw Exception("Oneshot upload failed: ${response.code()}")
+    }
+
+    suspend fun deleteFile(filename: String): Result<Unit> = runCatching {
+        val response = getApi().deleteFile(filename)
+        if (response.isSuccessful) Unit
+        else throw Exception("Delete failed: ${response.code()}")
     }
 
     suspend fun getFileContent(filename: String): Result<ByteArray> = runCatching {
         val response = getApi().getFile(filename)
-        if (response.isSuccessful) {
-            response.body()?.bytes() ?: ByteArray(0)
-        } else {
-            throw Exception("Download failed: ${response.code()}")
-        }
+        if (response.isSuccessful) response.body()?.bytes() ?: ByteArray(0)
+        else throw Exception("Download failed: ${response.code()}")
     }
 
     fun getFileUrl(settings: AppSettings, filename: String): String {
@@ -107,34 +119,24 @@ class PasteRepository(
 
             val messages = coroutineScope {
                 chatPastes.map { paste ->
-                    async {
-                        pasteToMessage(paste)
-                    }
+                    async { pasteToMessage(paste) }
                 }.awaitAll().filterNotNull()
             }
-
             messages.sortedBy { it.timestamp }
         }
     }
 
     private suspend fun pasteToMessage(paste: PasteItem): Message? {
-        val parsed = Message.parseFromFileName(paste.fileName)
-            ?: return null
-
-        val content = getFileContent(paste.fileName).getOrNull()
-            ?: return null
-
+        val parsed = Message.parseFromFileName(paste.fileName) ?: return null
+        val content = getFileContent(paste.fileName).getOrNull() ?: return null
         val text = String(content, Charsets.UTF_8)
 
         val isMedia = parsed.isMedia || paste.fileName.let { name ->
-            val ext = name.substringAfterLast('.', "").lowercase()
-            ext in listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
+            name.substringAfterLast('.', "").lowercase() in listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
         }
 
         val mediaUrl = if (isMedia) {
-            val settings = kotlinx.coroutines.runBlocking {
-                preferencesManager.settingsFlow.first()
-            }
+            val settings = kotlinx.coroutines.runBlocking { preferencesManager.settingsFlow.first() }
             getFileUrl(settings, paste.fileName)
         } else null
 
@@ -147,7 +149,7 @@ class PasteRepository(
             status = MessageStatus.DELIVERED,
             timestamp = creationTs,
             mediaUrl = mediaUrl,
-            mediaType = if (isMedia) com.rustypastechat.data.model.MediaType.IMAGE else null,
+            mediaType = if (isMedia) MediaType.IMAGE else null,
             pasteFileName = paste.fileName,
             isLlmResponse = !parsed.isOutgoing
         )
@@ -164,9 +166,7 @@ class PasteRepository(
                 val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
                 fmt.timeZone = TimeZone.getTimeZone("UTC")
                 fmt.parse(dateStr)?.time
-            } catch (_: Exception) {
-                null
-            }
+            } catch (_: Exception) { null }
         }
     }
 }

@@ -20,7 +20,12 @@ data class Message(
     val mediaUrl: String? = null,
     val mediaType: MediaType? = null,
     val pasteFileName: String? = null,
-    val isLlmResponse: Boolean = false
+    val isLlmResponse: Boolean = false,
+    val replyToId: String? = null,
+    val replyToText: String? = null,
+    val replyToIsOutgoing: Boolean? = null,
+    val isOneshot: Boolean = false,
+    val expiresAt: Long? = null
 ) {
     companion object {
         const val CHAT_PREFIX = "c_"
@@ -60,6 +65,12 @@ data class ParsedFileName(
     val timestamp: Long,
     val isOutgoing: Boolean,
     val isMedia: Boolean
+)
+
+data class ReplyTarget(
+    val messageId: String,
+    val text: String,
+    val isOutgoing: Boolean
 )
 
 @Serializable

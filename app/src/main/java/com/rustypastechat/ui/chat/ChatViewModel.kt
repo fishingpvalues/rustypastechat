@@ -1,6 +1,9 @@
 package com.rustypastechat.ui.chat
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.local.PreferencesManager
@@ -8,6 +11,8 @@ import com.rustypastechat.data.model.AppSettings
 import com.rustypastechat.data.model.LlmMessage
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.model.MessageStatus
+import com.rustypastechat.data.model.PasteItem
+import com.rustypastechat.data.model.ReplyTarget
 import com.rustypastechat.data.repository.LlmRepository
 import com.rustypastechat.data.repository.PasteRepository
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +34,10 @@ data class ChatUiState(
     val error: String? = null,
     val typingMessage: String = "",
     val isLlmTyping: Boolean = false,
-    val historyLoaded: Boolean = false
+    val historyLoaded: Boolean = false,
+    val replyTarget: ReplyTarget? = null,
+    val isOneshotMode: Boolean = false,
+    val messageTtlSeconds: Long = 0L // 0 = no expiry
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,11 +56,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             preferencesManager.settingsFlow.collect { settings ->
                 val wasDisconnected = previousServerUrl != settings.pasteServerUrl
                 previousServerUrl = settings.pasteServerUrl
-
-                _uiState.update {
-                    it.copy(settings = settings, isConnected = settings.pasteServerUrl.isNotBlank())
-                }
-
+                _uiState.update { it.copy(settings = settings, isConnected = settings.pasteServerUrl.isNotBlank()) }
                 if (settings.pasteServerUrl.isNotBlank() &&
                     (!_uiState.value.historyLoaded || wasDisconnected)) {
                     loadChatHistory()
@@ -67,30 +71,37 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             pasteRepository.loadChatHistory()
                 .onSuccess { messages ->
                     _uiState.update {
-                        it.copy(
-                            messages = messages,
-                            historyLoaded = true,
-                            isRefreshing = false,
-                            isLoading = false
-                        )
+                        it.copy(messages = messages, historyLoaded = true, isRefreshing = false, isLoading = false)
                     }
                 }
                 .onFailure { e ->
                     _uiState.update {
-                        it.copy(
-                            isRefreshing = false,
-                            isLoading = false,
-                            isConnected = false,
-                            error = "Could not load chat history: ${e.message}"
-                        )
+                        it.copy(isRefreshing = false, isLoading = false, isConnected = false,
+                            error = "Could not load chat history: ${e.message}")
                     }
                 }
         }
     }
 
+    // ── Input state ──────────────────────────────────────────────────────────
+
     fun updateTypingMessage(text: String) {
         _uiState.update { it.copy(typingMessage = text) }
     }
+
+    fun setReplyTarget(target: ReplyTarget?) {
+        _uiState.update { it.copy(replyTarget = target) }
+    }
+
+    fun toggleOneshotMode() {
+        _uiState.update { it.copy(isOneshotMode = !it.isOneshotMode) }
+    }
+
+    fun setMessageTtl(seconds: Long) {
+        _uiState.update { it.copy(messageTtlSeconds = if (it.messageTtlSeconds == seconds) 0L else seconds) }
+    }
+
+    // ── Send messages ────────────────────────────────────────────────────────
 
     fun sendTextMessage() {
         val text = _uiState.value.typingMessage.trim()
@@ -99,6 +110,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val fileName = Message.buildFileName(now, true, messageId)
+        val reply = _uiState.value.replyTarget
+        val isOneshot = _uiState.value.isOneshotMode
+        val ttl = _uiState.value.messageTtlSeconds
 
         val msg = Message(
             id = messageId,
@@ -106,13 +120,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             isOutgoing = true,
             status = MessageStatus.SENDING,
             timestamp = now,
-            pasteFileName = fileName
+            pasteFileName = fileName,
+            replyToId = reply?.messageId,
+            replyToText = reply?.text,
+            replyToIsOutgoing = reply?.isOutgoing,
+            isOneshot = isOneshot,
+            expiresAt = if (ttl > 0) now + ttl * 1000 else null
         )
 
-        _uiState.update { it.copy(messages = it.messages + msg, typingMessage = "") }
+        _uiState.update {
+            it.copy(messages = it.messages + msg, typingMessage = "", replyTarget = null, isOneshotMode = false)
+        }
 
         viewModelScope.launch {
-            val result = pasteRepository.uploadText(text, fileName)
+            val result = if (isOneshot) {
+                pasteRepository.uploadOneshot(text, fileName)
+            } else if (ttl > 0) {
+                pasteRepository.uploadTextWithExpiry(text, fileName, ttl)
+            } else {
+                pasteRepository.uploadText(text, fileName)
+            }
             result.onSuccess {
                 _uiState.update { state ->
                     val updated = state.messages.map { m ->
@@ -120,7 +147,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     state.copy(messages = updated)
                 }
-                checkLlmAutoReply(text)
+                if (!isOneshot) checkLlmAutoReply(text)
             }.onFailure { e ->
                 _uiState.update { state ->
                     val updated = state.messages.map { m ->
@@ -137,41 +164,72 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val now = System.currentTimeMillis()
         val ext = fileNameOriginal.substringAfterLast('.', "jpg")
         val fileName = Message.buildMediaFileName(now, messageId, ext)
+        val reply = _uiState.value.replyTarget
 
         val msg = Message(
-            id = messageId,
-            text = fileNameOriginal,
-            isOutgoing = true,
-            status = MessageStatus.SENDING,
-            timestamp = now,
-            mediaUrl = filePath,
-            mediaType = com.rustypastechat.data.model.MediaType.IMAGE,
-            pasteFileName = fileName
+            id = messageId, text = fileNameOriginal, isOutgoing = true,
+            status = MessageStatus.SENDING, timestamp = now,
+            mediaUrl = filePath, mediaType = com.rustypastechat.data.model.MediaType.IMAGE,
+            pasteFileName = fileName,
+            replyToId = reply?.messageId, replyToText = reply?.text, replyToIsOutgoing = reply?.isOutgoing
         )
 
-        _uiState.update { it.copy(messages = it.messages + msg) }
+        _uiState.update { it.copy(messages = it.messages + msg, replyTarget = null) }
 
         viewModelScope.launch {
-            val result = pasteRepository.uploadFile(filePath, fileName)
-            result.onSuccess {
-                _uiState.update { state ->
-                    val settings = state.settings
-                    val url = pasteRepository.getFileUrl(settings, fileName)
-                    val updated = state.messages.map { m ->
-                        if (m.id == messageId) m.copy(status = MessageStatus.DELIVERED, mediaUrl = url)
-                        else m
+            pasteRepository.uploadFile(filePath, fileName)
+                .onSuccess {
+                    _uiState.update { state ->
+                        val url = pasteRepository.getFileUrl(state.settings, fileName)
+                        val updated = state.messages.map { m ->
+                            if (m.id == messageId) m.copy(status = MessageStatus.DELIVERED, mediaUrl = url) else m
+                        }
+                        state.copy(messages = updated)
                     }
-                    state.copy(messages = updated)
                 }
-            }.onFailure { e ->
-                _uiState.update { state ->
-                    val updated = state.messages.map { m ->
-                        if (m.id == messageId) m.copy(status = MessageStatus.FAILED) else m
+                .onFailure { e ->
+                    _uiState.update { state ->
+                        val updated = state.messages.map { m ->
+                            if (m.id == messageId) m.copy(status = MessageStatus.FAILED) else m
+                        }
+                        state.copy(messages = updated, error = e.message)
                     }
-                    state.copy(messages = updated, error = e.message)
                 }
+        }
+    }
+
+    // ── Message actions ──────────────────────────────────────────────────────
+
+    fun copyMessage(messageId: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        val clipboard = getApplication<Application>()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("message", msg.text))
+    }
+
+    fun replyToMessage(messageId: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        _uiState.update {
+            it.copy(replyTarget = ReplyTarget(msg.id, msg.text.take(80), msg.isOutgoing))
+        }
+    }
+
+    fun deleteMessage(messageId: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        _uiState.update { state ->
+            state.copy(messages = state.messages.filter { it.id != messageId })
+        }
+        // Try to delete from server if it has a paste filename
+        msg.pasteFileName?.let { fileName ->
+            viewModelScope.launch {
+                pasteRepository.deleteFile(fileName)
             }
         }
+    }
+
+    fun forwardMessage(messageId: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        _uiState.update { it.copy(typingMessage = msg.text) }
     }
 
     fun retryMessage(messageId: String) {
@@ -189,34 +247,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 val now = System.currentTimeMillis()
                 val fileName = msg.pasteFileName ?: Message.buildFileName(now, true, messageId)
-                val result = pasteRepository.uploadText(msg.text, fileName)
-                result.onSuccess {
-                    _uiState.update { state ->
-                        val updated = state.messages.map { m ->
-                            if (m.id == messageId) m.copy(
-                                status = MessageStatus.DELIVERED,
-                                pasteFileName = fileName
-                            ) else m
+                pasteRepository.uploadText(msg.text, fileName)
+                    .onSuccess {
+                        _uiState.update { state ->
+                            val updated = state.messages.map { m ->
+                                if (m.id == messageId) m.copy(status = MessageStatus.DELIVERED, pasteFileName = fileName) else m
+                            }
+                            state.copy(messages = updated)
                         }
-                        state.copy(messages = updated)
                     }
-                }.onFailure { e ->
-                    _uiState.update { state ->
-                        val updated = state.messages.map { m ->
-                            if (m.id == messageId) m.copy(status = MessageStatus.FAILED) else m
+                    .onFailure { e ->
+                        _uiState.update { state ->
+                            val updated = state.messages.map { m ->
+                                if (m.id == messageId) m.copy(status = MessageStatus.FAILED) else m
+                            }
+                            state.copy(messages = updated, error = e.message)
                         }
-                        state.copy(messages = updated, error = e.message)
                     }
-                }
             }
         }
     }
 
-    fun deleteMessage(messageId: String) {
-        _uiState.update { state ->
-            state.copy(messages = state.messages.filter { it.id != messageId })
-        }
-    }
+    // ── LLM ──────────────────────────────────────────────────────────────────
 
     private fun checkLlmAutoReply(userText: String) {
         val settings = _uiState.value.settings
@@ -227,13 +279,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val replyId = UUID.randomUUID().toString()
             var streamedText = ""
 
-            val streamMsg = Message(
-                id = replyId,
-                text = "",
-                isOutgoing = false,
-                status = MessageStatus.DELIVERED,
-                isLlmResponse = true
-            )
+            val streamMsg = Message(id = replyId, text = "", isOutgoing = false,
+                status = MessageStatus.DELIVERED, isLlmResponse = true)
             _uiState.update { it.copy(messages = it.messages + streamMsg) }
 
             val llmMessages = buildLlmContext(userText)
@@ -278,10 +325,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess {
                     _uiState.update { state ->
                         val updated = state.messages.map { m ->
-                            if (m.id == replyId) m.copy(
-                                pasteFileName = fileName,
-                                timestamp = now
-                            ) else m
+                            if (m.id == replyId) m.copy(pasteFileName = fileName, timestamp = now) else m
                         }
                         state.copy(messages = updated)
                     }
@@ -295,9 +339,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         val history = _uiState.value.messages.filter { it.isOutgoing || it.isLlmResponse }
         for (msg in history.takeLast(10)) {
             val role = if (msg.isOutgoing) "user" else "assistant"
-            if (msg.text.isNotBlank()) {
-                messages.add(LlmMessage(role, msg.text))
-            }
+            if (msg.text.isNotBlank()) messages.add(LlmMessage(role, msg.text))
         }
         messages.add(LlmMessage("user", currentText))
         return messages

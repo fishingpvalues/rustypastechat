@@ -7,6 +7,7 @@ import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -19,7 +20,16 @@ interface RustyPasteApi {
     @POST("/")
     suspend fun uploadFile(
         @Part file: MultipartBody.Part,
-        @Part("file") filename: RequestBody? = null
+        @Part("file") filename: RequestBody? = null,
+        @Header("expire") expire: String? = null
+    ): Response<ResponseBody>
+
+    @Multipart
+    @POST("/")
+    suspend fun uploadOneshot(
+        @Part file: MultipartBody.Part,
+        @Part("oneshot") oneshot: RequestBody,
+        @Header("expire") expire: String? = null
     ): Response<ResponseBody>
 
     @GET("/list")
