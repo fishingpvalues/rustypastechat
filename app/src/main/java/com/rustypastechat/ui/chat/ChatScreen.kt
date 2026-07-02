@@ -105,7 +105,7 @@ fun ChatScreen(
     uiState: ChatUiState,
     onTypingChange: (String) -> Unit,
     onSend: () -> Unit,
-    onMediaSelected: (String, String) -> Unit,
+    onMediaSelected: (android.net.Uri) -> Unit,
     onReplyTargetSet: (com.rustypastechat.data.model.ReplyTarget?) -> Unit,
     onToggleOneshot: () -> Unit,
     onSetTtl: (Long) -> Unit,
@@ -338,7 +338,7 @@ fun ChatScreen(
                             value = uiState.typingMessage,
                             onValueChange = onTypingChange,
                             onSend = onSend,
-                            onMediaSelected = { uri -> onMediaSelected(uri.toString(), "img_${System.currentTimeMillis()}.jpg") },
+                            onMediaSelected = onMediaSelected,
                             enabled = uiState.isConnected
                         )
                     }

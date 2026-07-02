@@ -3,6 +3,7 @@ package com.rustypastechat.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.local.PreferencesManager
@@ -54,6 +55,7 @@ class ChatViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
     private val pasteRepository: PasteRepository,
     private val llmRepository: LlmRepository,
+    private val imageProcessor: ImageProcessor,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
@@ -274,6 +276,19 @@ class ChatViewModel @Inject constructor(
                         }
                         state.copy(messages = updated, error = OneTimeEvent(e.message))
                     }
+                }
+        }
+    }
+
+    fun compressAndSendMedia(uri: Uri) {
+        viewModelScope.launch(ioDispatcher) {
+            val tempFile = java.io.File(appContext.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
+            imageProcessor.compressImage(uri, tempFile)
+                .onSuccess { compressed ->
+                    sendMediaMessage(compressed.absolutePath, uri.lastPathSegment ?: "image.jpg")
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(error = OneTimeEvent("Image error: ${e.message}")) }
                 }
         }
     }

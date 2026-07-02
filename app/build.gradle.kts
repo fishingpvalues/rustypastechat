@@ -85,6 +85,9 @@ dependencies {
     // SFTP backup
     implementation(libs.jsch)
 
+    // Image processing
+    implementation(libs.exifinterface)
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

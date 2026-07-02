@@ -24,7 +24,7 @@ fun ChatRoute(
         uiState = uiState,
         onTypingChange = viewModel::updateTypingMessage,
         onSend = viewModel::sendTextMessage,
-        onMediaSelected = { uri, name -> viewModel.sendMediaMessage(uri, name) },
+        onMediaSelected = { uri -> viewModel.compressAndSendMedia(uri) },
         onReplyTargetSet = viewModel::setReplyTarget,
         onToggleOneshot = viewModel::toggleOneshotMode,
         onSetTtl = viewModel::setMessageTtl,
