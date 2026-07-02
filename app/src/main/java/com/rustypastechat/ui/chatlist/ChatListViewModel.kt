@@ -1,9 +1,9 @@
 package com.rustypastechat.ui.chatlist
 
-import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.local.PreferencesManager
+import com.rustypastechat.data.model.ChatCategory
 import com.rustypastechat.data.model.ChatThread
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.repository.PasteRepository
@@ -26,6 +26,7 @@ data class ChatListState(
     val searchQuery: String = "",
     val searchResults: List<Message> = emptyList(),
     val isSearching: Boolean = false,
+    val selectedCategory: ChatCategory? = null,
     val error: OneTimeEvent<String?> = OneTimeEvent(null)
 )
 
@@ -37,11 +38,15 @@ class ChatListViewModel @Inject constructor(
     private val _state = MutableStateFlow(ChatListState())
     val state: StateFlow<ChatListState> = _state.asStateFlow()
 
+    private val allChats = mutableListOf<ChatThread>()
+
     init {
         viewModelScope.launch {
             prefs.settingsFlow.collect { s ->
-                if (s.pasteServerUrl.isNotBlank()) { _state.update { it.copy(isConnected = true) }; loadChats() }
-                else _state.update { it.copy(isConnected = false) }
+                if (s.pasteServerUrl.isNotBlank()) {
+                    _state.update { it.copy(isConnected = true) }
+                    loadChats()
+                } else _state.update { it.copy(isConnected = false) }
             }
         }
     }
@@ -51,19 +56,23 @@ class ChatListViewModel @Inject constructor(
         pasteRepo.loadChatHistory(Message.DEFAULT_CHAT)
             .onSuccess { messages ->
                 val chats = groupMessagesByChat(messages)
-                _state.update { it.copy(chats = chats, allMessages = messages, isLoading = false) }
+                allChats.clear()
+                allChats.addAll(chats)
+                _state.update { it.copy(chats = filterByCategory(allChats, it.selectedCategory), allMessages = messages, isLoading = false) }
             }
             .onFailure { e ->
                 _state.update { it.copy(isLoading = false, error = OneTimeEvent(e.message)) }
             }
     }
 
+    fun setCategoryFilter(category: ChatCategory?) {
+        val newCategory = if (_state.value.selectedCategory == category) null else category
+        _state.update { it.copy(selectedCategory = newCategory, chats = filterByCategory(allChats, newCategory)) }
+    }
+
     fun setSearchQuery(query: String) {
         _state.update { it.copy(searchQuery = query, isSearching = query.isNotBlank()) }
-        if (query.isBlank()) {
-            _state.update { it.copy(searchResults = emptyList()) }
-            return
-        }
+        if (query.isBlank()) { _state.update { it.copy(searchResults = emptyList()) }; return }
         val results = _state.value.allMessages.filter { msg ->
             msg.text.isNotBlank() && FuzzySearch.search(query, msg.text)
         }
@@ -74,36 +83,51 @@ class ChatListViewModel @Inject constructor(
         _state.update { it.copy(searchQuery = "", searchResults = emptyList(), isSearching = false) }
     }
 
-    fun createChat(name: String) = viewModelScope.launch {
+    fun createChat(name: String, category: ChatCategory = ChatCategory.GENERAL) = viewModelScope.launch {
         val id = UUID.randomUUID().toString().take(8)
-        val chat = ChatThread.create(id, name.take(30))
-        _state.update { it.copy(chats = listOf(chat) + it.chats) }
+        val chat = ChatThread.create(id, name.take(30), category)
+        allChats.add(0, chat)
+        _state.update { it.copy(chats = filterByCategory(allChats, it.selectedCategory)) }
     }
 
     fun renameChat(chatId: String, newName: String) {
-        _state.update { state ->
-            state.copy(chats = state.chats.map {
-                if (it.id == chatId) it.copy(name = newName) else it
-            })
+        val idx = allChats.indexOfFirst { it.id == chatId }
+        if (idx >= 0) {
+            allChats[idx] = allChats[idx].copy(name = newName)
+            _state.update { it.copy(chats = filterByCategory(allChats, it.selectedCategory)) }
+        }
+    }
+
+    fun setChatCategory(chatId: String, category: ChatCategory) {
+        val idx = allChats.indexOfFirst { it.id == chatId }
+        if (idx >= 0) {
+            allChats[idx] = allChats[idx].copy(category = category)
+            _state.update { it.copy(chats = filterByCategory(allChats, it.selectedCategory)) }
         }
     }
 
     fun deleteChat(chatId: String) {
-        _state.update { state ->
-            state.copy(chats = state.chats.filter { it.id != chatId })
-        }
+        allChats.removeAll { it.id == chatId }
+        _state.update { it.copy(chats = filterByCategory(allChats, it.selectedCategory)) }
+    }
+
+    private fun filterByCategory(chats: List<ChatThread>, category: ChatCategory?): List<ChatThread> {
+        return if (category == null) chats else chats.filter { it.category == category }
     }
 
     private fun groupMessagesByChat(messages: List<Message>): List<ChatThread> {
         val grouped = messages.groupBy { it.chatId }
         return grouped.map { (chatId, msgs) ->
             val last = msgs.lastOrNull()
+            val existing = allChats.find { it.id == chatId }
             ChatThread(
                 id = chatId,
-                name = chatName(chatId),
+                name = existing?.name ?: chatName(chatId),
                 lastMessage = last?.text?.take(80) ?: "",
                 lastTimestamp = last?.timestamp ?: 0L,
-                messageCount = msgs.size
+                messageCount = msgs.size,
+                category = existing?.category ?: ChatCategory.GENERAL,
+                avatarColor = existing?.avatarColor ?: 0xFF1A73E8
             )
         }.sortedByDescending { it.lastTimestamp }
     }
