@@ -83,6 +83,7 @@ private sealed class SettingsPage(val ordinal: Int) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("UnusedContentLambdaTargetStateParameter")
 @Composable
 fun SettingsScreen(
     uiState: SettingsUiState,
