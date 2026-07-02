@@ -3,12 +3,14 @@ package com.rustypastechat
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
+import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.security.BiometricLockManager
 import com.rustypastechat.security.SecurePreferences
 import com.rustypastechat.ui.navigation.NavGraph
@@ -24,6 +26,7 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var securePrefs: SecurePreferences
     @Inject lateinit var lockManager: BiometricLockManager
+    @Inject lateinit var preferencesManager: PreferencesManager
 
     private var lockTimer: Timer? = null
     private var lastActiveTime = System.currentTimeMillis()
@@ -34,7 +37,16 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            RustyPasteChatTheme {
+            val themeMode by preferencesManager.settingsFlow.collectAsState(initial = com.rustypastechat.data.model.AppSettings())
+
+            RustyPasteChatTheme(
+                darkTheme = when (themeMode.themeMode) {
+                    com.rustypastechat.data.model.ThemeMode.LIGHT -> false
+                    com.rustypastechat.data.model.ThemeMode.DARK -> true
+                    com.rustypastechat.data.model.ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+                },
+                dynamicColor = themeMode.useDynamicColor
+            ) {
                 var isLocked by remember {
                     mutableStateOf(securePrefs.biometricEnabled)
                 }

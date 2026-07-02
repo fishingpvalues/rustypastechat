@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.ThemeMode
 import com.rustypastechat.security.SecurePreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,9 @@ class PreferencesManager @Inject constructor(
         private val KEY_LLM_MODEL = stringPreferencesKey("llm_model")
         private val KEY_BIOMETRIC_ENABLED = booleanPreferencesKey("biometric_enabled")
         private val KEY_LOCK_TIMEOUT = stringPreferencesKey("lock_timeout")
+        private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        private val KEY_SHOW_DATE_HEADERS = booleanPreferencesKey("date_headers")
     }
 
     private val securePrefs = SecurePreferences(context)
@@ -43,11 +47,13 @@ class PreferencesManager @Inject constructor(
             llmApiKey = secureApiKey,
             llmModel = prefs[KEY_LLM_MODEL] ?: "gpt-3.5-turbo",
             biometricEnabled = securePrefs.biometricEnabled,
-            lockTimeoutSeconds = securePrefs.lockTimeoutSeconds
+            lockTimeoutSeconds = securePrefs.lockTimeoutSeconds,
+            themeMode = try { ThemeMode.valueOf(prefs[KEY_THEME_MODE] ?: "SYSTEM") } catch (_: Exception) { ThemeMode.SYSTEM },
+            useDynamicColor = prefs[KEY_DYNAMIC_COLOR] ?: true,
+            showDateHeaders = prefs[KEY_SHOW_DATE_HEADERS] ?: true
         )
     }
 
-    /** Synchronous token access for OkHttp interceptors (backed by EncryptedSharedPreferences). */
     val authTokenSync: String?
         get() = securePrefs.authToken.ifBlank { null }
 
@@ -57,6 +63,9 @@ class PreferencesManager @Inject constructor(
             prefs[KEY_LLM_ENABLED] = settings.llmEnabled
             prefs[KEY_LLM_ENDPOINT] = settings.llmEndpoint
             prefs[KEY_LLM_MODEL] = settings.llmModel.ifBlank { "gpt-3.5-turbo" }
+            prefs[KEY_THEME_MODE] = settings.themeMode.name
+            prefs[KEY_DYNAMIC_COLOR] = settings.useDynamicColor
+            prefs[KEY_SHOW_DATE_HEADERS] = settings.showDateHeaders
         }
         securePrefs.apply {
             authToken = settings.authToken

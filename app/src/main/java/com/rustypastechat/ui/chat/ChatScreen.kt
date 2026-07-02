@@ -360,12 +360,14 @@ fun ChatScreen(
                 }
                 else -> {
                     PullToRefreshBox(isRefreshing = uiState.isRefreshing, onRefresh = onRefresh) {
-                        val messagesWithHeaders = remember(displayMessages) {
+                        val messagesWithHeaders = remember(displayMessages, uiState.settings.showDateHeaders) {
                             buildList {
                                 displayMessages.forEachIndexed { index, msg ->
-                                    val prevTimestamp = displayMessages.getOrNull(index - 1)?.timestamp
-                                    if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
-                                        add(null to formatDateHeader(msg.timestamp))
+                                    if (uiState.settings.showDateHeaders) {
+                                        val prevTimestamp = displayMessages.getOrNull(index - 1)?.timestamp
+                                        if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
+                                            add(null to formatDateHeader(msg.timestamp))
+                                        }
                                     }
                                     add(msg to null)
                                 }

@@ -6,13 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.api.ApiClientFactory
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.ThemeMode
 import com.rustypastechat.ui.common.OneTimeEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -75,6 +75,18 @@ class SettingsViewModel @Inject constructor(
 
     fun updateLockTimeout(seconds: Int) {
         _uiState.update { it.copy(settings = it.settings.copy(lockTimeoutSeconds = seconds)) }
+    }
+
+    fun updateThemeMode(mode: ThemeMode) {
+        _uiState.update { it.copy(settings = it.settings.copy(themeMode = mode)) }
+    }
+
+    fun updateDynamicColor(enabled: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(useDynamicColor = enabled)) }
+    }
+
+    fun updateShowDateHeaders(show: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(showDateHeaders = show)) }
     }
 
     fun saveSettings() {
