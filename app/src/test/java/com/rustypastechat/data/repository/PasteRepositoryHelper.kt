@@ -14,8 +14,10 @@ class PasteRepositoryHelper(
     private val token: String? = null
 ) : PasteAuthInterceptor.TokenProvider {
 
+    private val apiClientFactory = ApiClientFactory(this)
+
     private val api: RustyPasteApi by lazy {
-        ApiClientFactory.createPasteApi(baseUrl, this)
+        apiClientFactory.createPasteApi(baseUrl)
     }
 
     override fun getToken(): String? = token

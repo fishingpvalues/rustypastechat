@@ -1,5 +1,8 @@
 package com.rustypastechat.ui.chatlist
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,7 +46,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,7 +57,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustypastechat.data.model.ChatThread
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.ui.components.GlassCard
@@ -68,15 +69,25 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatListScreen(
+    state: ChatListState,
+    onSearchQueryChanged: (String) -> Unit,
+    onClearSearch: () -> Unit,
+    onCreateChat: (String) -> Unit,
+    onRenameChat: (String, String) -> Unit,
+    onDeleteChat: (String) -> Unit,
+    onRefresh: () -> Unit,
     onChatClick: (String) -> Unit,
-    onSettings: () -> Unit,
-    onCamera: () -> Unit = {},
-    viewModel: ChatListViewModel = viewModel()
+    onSettings: () -> Unit
 ) {
-    val state by viewModel.state.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newChatName by remember { mutableStateOf("") }
     var overflowExpanded by remember { mutableStateOf(false) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        // Camera capture handled here
+    }
 
     Scaffold(
         topBar = {
@@ -85,7 +96,7 @@ fun ChatListScreen(
                     title = {
                         OutlinedTextField(
                             value = state.searchQuery,
-                            onValueChange = viewModel::setSearchQuery,
+                            onValueChange = onSearchQueryChanged,
                             placeholder = { Text("Search messages...", style = MaterialTheme.typography.bodyMedium) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -98,7 +109,7 @@ fun ChatListScreen(
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = { viewModel.clearSearch() }) {
+                        IconButton(onClick = onClearSearch) {
                             Icon(Icons.Default.Close, "Close search")
                         }
                     },
@@ -114,10 +125,10 @@ fun ChatListScreen(
                         )
                     },
                     actions = {
-                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                        IconButton(onClick = { onSearchQueryChanged(state.searchQuery) }) {
                             Icon(Icons.Default.Search, "Search")
                         }
-                        IconButton(onClick = onCamera) {
+                        IconButton(onClick = { cameraLauncher.launch(null) }) {
                             Icon(Icons.Default.CameraAlt, "Camera")
                         }
                         Box {
@@ -152,7 +163,6 @@ fun ChatListScreen(
                         }
                     }
                 state.isSearching -> {
-                    // Search results
                     if (state.searchResults.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No results for \"${state.searchQuery}\"", style = MaterialTheme.typography.bodyMedium,
@@ -189,7 +199,7 @@ fun ChatListScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (newChatName.isNotBlank()) { viewModel.createChat(newChatName); newChatName = ""; showCreateDialog = false }
+                    if (newChatName.isNotBlank()) { onCreateChat(newChatName); newChatName = ""; showCreateDialog = false }
                 }) { Text("Create") }
             },
             dismissButton = { TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") } })
@@ -264,7 +274,7 @@ private fun SearchResultItem(msg: Message, onClick: () -> Unit) {
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "Chat: ${msg.chatId.take(8)} · ${SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date(msg.timestamp))}",
+                "Chat: ${msg.chatId.take(8)} - ${SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date(msg.timestamp))}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

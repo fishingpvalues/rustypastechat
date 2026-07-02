@@ -1,13 +1,10 @@
 package com.rustypastechat.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -19,7 +16,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rustypastechat.ui.theme.Blue
 
@@ -45,22 +41,23 @@ fun GlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val elevation = if (elevated) 2.dp else 0.dp
-    val border = if (borderAlpha > 0f) {
-        BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha))
-    } else {
-        null
-    }
     Card(
         onClick = onClick ?: {},
         enabled = onClick != null,
-        modifier = if (border != null) {
-            modifier.fillMaxWidth().border(border.width, border.brush, shape)
-        } else {
-            modifier.fillMaxWidth()
-        },
+        modifier = modifier.fillMaxWidth(),
         shape = shape,
         elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = if (borderAlpha > 0f) {
+            CardDefaults.outlinedCardBorder().copy(
+                brush = Brush.linearGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha)
+                    )
+                )
+            )
+        } else null,
         content = content
     )
 }
@@ -74,7 +71,7 @@ fun GlassSurface(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape),
         content = content
     )
 }
@@ -97,14 +94,17 @@ fun GlowCard(
         modifier = modifier
             .fillMaxWidth()
             .drawBehind {
+                val cx = size.width * 0.5f
+                val cy = size.height * 0.5f
+                val r = size.minDimension * glowRadius
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(glow, transparent),
-                        center = Offset(size.width * 0.5f, size.height * 0.5f),
-                        radius = size.minDimension * glowRadius
+                        center = Offset(cx, cy),
+                        radius = r
                     ),
-                    radius = size.minDimension * glowRadius,
-                    center = Offset(size.width * 0.5f, size.height * 0.5f)
+                    radius = r,
+                    center = Offset(cx, cy)
                 )
             },
         shape = shape,

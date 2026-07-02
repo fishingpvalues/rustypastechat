@@ -1,7 +1,6 @@
 package com.rustypastechat.data.repository
 
 import com.rustypastechat.data.api.ApiClientFactory
-import com.rustypastechat.data.api.PasteAuthInterceptor
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
 import com.rustypastechat.data.model.MediaType
@@ -23,24 +22,20 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class PasteRepository(
-    private val preferencesManager: PreferencesManager
-) : PasteAuthInterceptor.TokenProvider {
-
+@Singleton
+class PasteRepository @Inject constructor(
+    private val preferencesManager: PreferencesManager,
+    private val apiClientFactory: ApiClientFactory
+) {
     private var api: com.rustypastechat.data.api.RustyPasteApi? = null
-
-    override fun getToken(): String? {
-        val settings = kotlinx.coroutines.runBlocking {
-            preferencesManager.settingsFlow.first()
-        }
-        return settings.authToken.ifBlank { null }
-    }
 
     private suspend fun getApi(): com.rustypastechat.data.api.RustyPasteApi {
         val settings = preferencesManager.settingsFlow.first()
         if (api == null) {
-            api = ApiClientFactory.createPasteApi(settings.pasteServerUrl, this)
+            api = apiClientFactory.createPasteApi(settings.pasteServerUrl)
         }
         return api!!
     }
@@ -106,72 +101,55 @@ class PasteRepository(
         return "$base/$filename"
     }
 
-    // ── Chat history reconstruction ─────────────────────────────────────────
-
     suspend fun loadChatHistory(chatId: String = Message.DEFAULT_CHAT): Result<List<Message>> = withContext(Dispatchers.IO) {
         runCatching {
             val pastes = listFiles().getOrThrow()
+            val settings = preferencesManager.settingsFlow.first()
 
-            // Separate chat files from imported/system files
             val chatPastes = pastes.filter { Message.isChatFile(it.fileName) }
             val otherPastes = pastes.filter { !Message.isChatFile(it.fileName) }
 
-            // Only import other files if they haven't been imported before
-            // (we track this by checking if the content was already seen in chat)
             val chatContentSet = mutableSetOf<String>()
 
-            // Process chat files first (ordered by creation date)
             val chatOnlyPastes = chatPastes.sortedBy { it.creationDateUtc ?: "" }
 
             val chatMessages = coroutineScope {
                 chatOnlyPastes.map { paste ->
-                    async {
-                        pasteToMessage(paste).also { msg ->
-                            msg?.text?.let { chatContentSet.add(it) }
-                        }
-                    }
-                }.awaitAll().filterNotNull()
+                    async { pasteToMessage(paste, settings) }
+                }.awaitAll().filterNotNull().also { messages ->
+                    messages.forEach { msg -> msg.text.let { chatContentSet.add(it) } }
+                }
             }
 
-            // Process imported files: only include if content differs from chat messages
             val importedPastes = otherPastes.sortedBy { it.creationDateUtc ?: "" }
             val importedMessages = coroutineScope {
                 importedPastes.map { paste ->
-                    async { pasteToImportedMessage(paste, chatContentSet) }
+                    async { pasteToImportedMessage(paste, settings, chatContentSet) }
                 }.awaitAll().filterNotNull()
             }
 
-            // Merge and sort all messages by timestamp
             (chatMessages + importedMessages).sortedBy { it.timestamp }
         }
     }
 
-    private suspend fun pasteToImportedMessage(paste: PasteItem, existingContent: Set<String>): Message? {
-        // Skip directories and URL files (oneshot_url, url dirs)
+    private suspend fun pasteToImportedMessage(
+        paste: PasteItem,
+        settings: AppSettings,
+        existingContent: Set<String>
+    ): Message? {
         if (paste.fileSize <= 0) return null
-
-        // Skip archived oneshot files (renamed with timestamp suffix)
         if (paste.fileName.contains(".[0-9]".toRegex()) && paste.fileName.length > 20) return null
 
         val content = getFileContent(paste.fileName).getOrNull() ?: return null
         val text = String(content, Charsets.UTF_8)
 
-        // Skip if content already exists as a chat message
         if (text in existingContent) return null
-
-        // Skip binary/large files (only show text pastes)
         if (paste.fileSize > 100_000) return null
-
-        // Try to detect if this is text content
         if (!text.all { it.isLetterOrDigit() || it.isWhitespace() || it in "!@#$%^&*()_+-=[]{}|;':\",./<>?`~" }) {
-            // Binary content, skip
             return null
         }
 
-        val creationTs = parseCreationTimestamp(paste.creationDateUtc)
-            ?: System.currentTimeMillis()
-
-        val settings = kotlinx.coroutines.runBlocking { preferencesManager.settingsFlow.first() }
+        val creationTs = parseCreationTimestamp(paste.creationDateUtc) ?: System.currentTimeMillis()
         val isMedia = paste.fileName.substringAfterLast('.', "").lowercase() in
             listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
 
@@ -188,7 +166,7 @@ class PasteRepository(
         )
     }
 
-    private suspend fun pasteToMessage(paste: PasteItem): Message? {
+    private suspend fun pasteToMessage(paste: PasteItem, settings: AppSettings): Message? {
         val parsed = Message.parseFromFileName(paste.fileName) ?: return null
         val content = getFileContent(paste.fileName).getOrNull() ?: return null
         val text = String(content, Charsets.UTF_8)
@@ -197,11 +175,7 @@ class PasteRepository(
             name.substringAfterLast('.', "").lowercase() in listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
         }
 
-        val mediaUrl = if (isMedia) {
-            val settings = kotlinx.coroutines.runBlocking { preferencesManager.settingsFlow.first() }
-            getFileUrl(settings, paste.fileName)
-        } else null
-
+        val mediaUrl = if (isMedia) getFileUrl(settings, paste.fileName) else null
         val creationTs = parseCreationTimestamp(paste.creationDateUtc) ?: parsed.timestamp
 
         return Message(

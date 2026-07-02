@@ -1,7 +1,6 @@
 package com.rustypastechat
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
@@ -15,23 +14,24 @@ import com.rustypastechat.security.SecurePreferences
 import com.rustypastechat.ui.navigation.NavGraph
 import com.rustypastechat.ui.screens.LockScreen
 import com.rustypastechat.ui.theme.RustyPasteChatTheme
+import dagger.hilt.android.AndroidEntryPoint
 import java.util.Timer
 import java.util.TimerTask
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : FragmentActivity() {
+
+    @Inject lateinit var securePrefs: SecurePreferences
+    @Inject lateinit var lockManager: BiometricLockManager
 
     private var lockTimer: Timer? = null
     private var lastActiveTime = System.currentTimeMillis()
-    private lateinit var securePrefs: SecurePreferences
-    private lateinit var lockManager: BiometricLockManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        securePrefs = SecurePreferences(this)
-        lockManager = BiometricLockManager(this)
 
         setContent {
             RustyPasteChatTheme {
@@ -52,7 +52,6 @@ class MainActivity : FragmentActivity() {
                                     }
                                 )
                             } else {
-                                // Device has no biometric/PIN — allow access
                                 isLocked = false
                             }
                         }

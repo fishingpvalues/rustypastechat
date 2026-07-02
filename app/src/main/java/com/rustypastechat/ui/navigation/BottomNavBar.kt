@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -21,13 +20,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Chat
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Chat
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -46,22 +38,23 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.navigation3.runtime.NavKey
 
-private data class NavItem(
-    val route: String,
+data class AnimatedNavItem(
+    val route: NavKey,
     val label: String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 )
 
-private val navItems = listOf(
-    NavItem("chat_list", "Chats", Icons.Rounded.Chat, Icons.Outlined.Chat),
-    NavItem("settings", "Settings", Icons.Rounded.Settings, Icons.Outlined.Settings),
-)
-
 @Composable
-fun BottomNavBar(currentRoute: String, onNavigate: (String) -> Unit, modifier: Modifier = Modifier) {
-    val selectedIndex = navItems.indexOfFirst { currentRoute == it.route }.coerceAtLeast(0)
+fun AnimatedBottomNavBar(
+    items: List<AnimatedNavItem>,
+    currentRoute: NavKey,
+    onNavigate: (NavKey) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val selectedIndex = items.indexOfFirst { it.route == currentRoute }.coerceAtLeast(0)
 
     Box(
         modifier = modifier
@@ -77,7 +70,7 @@ fun BottomNavBar(currentRoute: String, onNavigate: (String) -> Unit, modifier: M
             tonalElevation = 3.dp
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val itemWidth = maxWidth / navItems.size
+                val itemWidth = maxWidth / items.size
 
                 val indicatorOffset by animateDpAsState(
                     targetValue = itemWidth * selectedIndex + (itemWidth - 46.dp) / 2,
@@ -94,7 +87,7 @@ fun BottomNavBar(currentRoute: String, onNavigate: (String) -> Unit, modifier: M
                 )
 
                 Row(modifier = Modifier.fillMaxWidth().height(72.dp)) {
-                    navItems.forEachIndexed { index, item ->
+                    items.forEachIndexed { index, item ->
                         val isSelected = index == selectedIndex
                         val iconScale by animateFloatAsState(
                             targetValue = if (isSelected) 1.10f else 1.0f,
@@ -107,7 +100,7 @@ fun BottomNavBar(currentRoute: String, onNavigate: (String) -> Unit, modifier: M
 
                         Box(
                             modifier = Modifier
-                                .weight(1f).fillMaxHeight()
+                                .weight(1f).height(72.dp)
                                 .semantics { role = Role.Tab; selected = isSelected }
                                 .clickable(
                                     indication = null,
@@ -125,7 +118,7 @@ fun BottomNavBar(currentRoute: String, onNavigate: (String) -> Unit, modifier: M
                                 ) {
                                     Icon(
                                         imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
-                                        contentDescription = null,
+                                        contentDescription = item.label,
                                         tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
                                         else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(22.dp).scale(iconScale)

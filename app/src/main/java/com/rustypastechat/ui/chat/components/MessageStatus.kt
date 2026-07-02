@@ -1,5 +1,6 @@
 package com.rustypastechat.ui.chat.components
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
@@ -10,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.rustypastechat.data.model.MessageStatus
 import com.rustypastechat.ui.theme.Green
 
@@ -22,7 +22,7 @@ fun MessageStatusIcon(status: MessageStatus, modifier: Modifier = Modifier) {
                 imageVector = Icons.Default.Check,
                 contentDescription = "Sending",
                 modifier = modifier,
-                tint = Color.White.copy(alpha = 0.5f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
         }
         MessageStatus.SENT -> {
@@ -30,7 +30,7 @@ fun MessageStatusIcon(status: MessageStatus, modifier: Modifier = Modifier) {
                 imageVector = Icons.Default.Check,
                 contentDescription = "Sent",
                 modifier = modifier,
-                tint = Color.White.copy(alpha = 0.7f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
         MessageStatus.DELIVERED -> {
@@ -38,7 +38,7 @@ fun MessageStatusIcon(status: MessageStatus, modifier: Modifier = Modifier) {
                 imageVector = Icons.Default.DoneAll,
                 contentDescription = "Delivered",
                 modifier = modifier,
-                tint = Color.White.copy(alpha = 0.7f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
         MessageStatus.READ -> {
@@ -52,7 +52,7 @@ fun MessageStatusIcon(status: MessageStatus, modifier: Modifier = Modifier) {
         MessageStatus.FAILED -> {
             Text(
                 text = "!",
-                color = Color(0xFFFFCC00),
+                color = MaterialTheme.colorScheme.error,
                 fontWeight = FontWeight.Bold,
                 fontSize = MaterialTheme.typography.labelSmall.fontSize,
                 modifier = modifier

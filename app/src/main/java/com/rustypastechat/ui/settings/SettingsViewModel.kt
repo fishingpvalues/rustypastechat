@@ -1,16 +1,21 @@
 package com.rustypastechat.ui.settings
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rustypastechat.data.api.ApiClientFactory
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.ui.common.OneTimeEvent
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
@@ -18,12 +23,16 @@ data class SettingsUiState(
     val isTesting: Boolean = false,
     val testResult: String? = null,
     val cacheSize: String = "0 KB",
-    val pasteCount: Int = 0
+    val pasteCount: Int = 0,
+    val error: OneTimeEvent<String?> = OneTimeEvent(null)
 )
 
-class SettingsViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val preferencesManager = PreferencesManager(application)
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val application: Application,
+    private val preferencesManager: PreferencesManager,
+    private val apiClientFactory: ApiClientFactory
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -84,12 +93,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _uiState.update { it.copy(isTesting = false, testResult = "Server URL is empty") }
                     return@launch
                 }
-                val api = com.rustypastechat.data.api.ApiClientFactory.createPasteApi(
-                    settings.pasteServerUrl,
-                    object : com.rustypastechat.data.api.PasteAuthInterceptor.TokenProvider {
-                        override fun getToken(): String? = settings.authToken.ifBlank { null }
-                    }
-                )
+                val api = apiClientFactory.createPasteApi(settings.pasteServerUrl)
                 val response = api.listFiles()
                 if (response.isSuccessful) {
                     _uiState.update { it.copy(isTesting = false, testResult = "Connected! ${response.body()?.size ?: 0} pastes on server") }
@@ -102,18 +106,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun clearCache(application: Application) {
+    fun clearCache() {
         viewModelScope.launch {
             val cacheDir = application.cacheDir
-            var size = 0L
             cacheDir.deleteRecursively()
             _uiState.update { it.copy(cacheSize = "0 KB") }
         }
     }
 
-    fun fetchStats(application: Application) {
+    fun fetchStats() {
         viewModelScope.launch {
-            // Cache size
             val cacheDir = application.cacheDir
             val cacheSize = if (cacheDir.exists()) {
                 cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }

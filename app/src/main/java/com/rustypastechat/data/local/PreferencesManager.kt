@@ -9,16 +9,18 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.rustypastechat.data.model.AppSettings
 import com.rustypastechat.security.SecurePreferences
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-class PreferencesManager(private val context: Context) {
-
+@Singleton
+class PreferencesManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     companion object {
         private val KEY_PASTE_SERVER_URL = stringPreferencesKey("paste_server_url")
         private val KEY_LLM_ENABLED = booleanPreferencesKey("llm_enabled")
@@ -35,7 +37,7 @@ class PreferencesManager(private val context: Context) {
         val secureApiKey = securePrefs.llmApiKey
         AppSettings(
             pasteServerUrl = prefs[KEY_PASTE_SERVER_URL] ?: "",
-            authToken = secureToken.ifBlank { prefs[KEY_PASTE_SERVER_URL]?.let { "" } ?: "" },
+            authToken = secureToken,
             llmEnabled = prefs[KEY_LLM_ENABLED] ?: false,
             llmEndpoint = prefs[KEY_LLM_ENDPOINT] ?: "",
             llmApiKey = secureApiKey,
@@ -44,6 +46,10 @@ class PreferencesManager(private val context: Context) {
             lockTimeoutSeconds = securePrefs.lockTimeoutSeconds
         )
     }
+
+    /** Synchronous token access for OkHttp interceptors (backed by EncryptedSharedPreferences). */
+    val authTokenSync: String?
+        get() = securePrefs.authToken.ifBlank { null }
 
     suspend fun saveSettings(settings: AppSettings) {
         context.dataStore.edit { prefs ->
@@ -59,9 +65,4 @@ class PreferencesManager(private val context: Context) {
             lockTimeoutSeconds = settings.lockTimeoutSeconds
         }
     }
-
-    fun getCurrentToken(): String? = securePrefs.authToken.ifBlank { null }
-
-    val biometricEnabled: Boolean get() = securePrefs.biometricEnabled
-    val lockTimeoutSeconds: Int get() = securePrefs.lockTimeoutSeconds
 }

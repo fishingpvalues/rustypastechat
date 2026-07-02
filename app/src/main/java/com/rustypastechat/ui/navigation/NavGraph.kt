@@ -1,87 +1,76 @@
 package com.rustypastechat.ui.navigation
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import com.rustypastechat.ui.chat.ChatScreen
-import com.rustypastechat.ui.chatlist.ChatListScreen
-import com.rustypastechat.ui.settings.SettingsScreen
-
-object Routes {
-    const val CHAT_LIST = "chat_list"
-    const val CHAT = "chat/{chatId}"
-    const val SETTINGS = "settings"
-
-    fun chatRoute(chatId: String) = "chat/$chatId"
-}
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.ui.NavDisplay
+import com.rustypastechat.ui.chat.ChatRoute
+import com.rustypastechat.ui.chatlist.ChatListRoute
+import com.rustypastechat.ui.settings.SettingsRoute
 
 @Composable
 fun NavGraph() {
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route ?: Routes.CHAT_LIST
-    val showBottomNav = currentRoute in listOf(Routes.CHAT_LIST, Routes.SETTINGS)
+    val navigationState = rememberNavigationState(
+        startRoute = ChatList,
+        topLevelRoutes = TOP_LEVEL_ROUTES
+    )
+    val navigator = remember { Navigator(navigationState) }
+    val currentTopLevelRoute = navigationState.topLevelRoute
 
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        bitmap?.let {}
-    }
-
-    Column {
-        NavHost(
-            navController = navController,
-            startDestination = Routes.CHAT_LIST,
-            enterTransition = { fadeIn(androidx.compose.animation.core.tween(300)) },
-            exitTransition = { fadeOut(androidx.compose.animation.core.tween(300)) },
-            modifier = Modifier.weight(1f)
-        ) {
-                composable(Routes.CHAT_LIST) {
-                    ChatListScreen(
-                        onChatClick = { navController.navigate(Routes.chatRoute(it)) },
-                        onSettings = { navController.navigate(Routes.SETTINGS) },
-                        onCamera = { cameraLauncher.launch(null) }
-                    )
-                }
-                composable(
-                    route = Routes.CHAT,
-                    arguments = listOf(navArgument("chatId") { type = NavType.StringType })
-                ) { backStackEntry ->
-                    val chatId = backStackEntry.arguments?.getString("chatId") ?: "default"
-                    ChatScreen(
-                        onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
-                        onNavigateBack = { navController.popBackStack() }
-                    )
-                }
-                composable(Routes.SETTINGS) {
-                    SettingsScreen(onNavigateBack = { navController.popBackStack() })
+    val entryProvider = remember(navigator) {
+        entryProvider<NavKey> {
+            entry<ChatList> {
+                ChatListRoute(
+                    onChatClick = { chatId -> navigator.navigate(Chat(chatId)) },
+                    onSettings = { navigator.navigate(Settings) }
+                )
+            }
+            entry<Chat> { key ->
+                ChatRoute(
+                    chatId = key.chatId,
+                    onNavigateToSettings = { navigator.navigate(Settings) },
+                    onNavigateBack = { navigator.goBack() }
+                )
+            }
+            entry<Settings> {
+                SettingsRoute(
+                    onNavigateBack = { navigator.goBack() }
+                )
             }
         }
-        if (showBottomNav) {
-            BottomNavBar(
-                currentRoute = currentRoute,
-                onNavigate = { route ->
-                    navController.navigate(route) {
-                        popUpTo(Routes.CHAT_LIST) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            )
+    }
+
+    val navBarItems = listOf(
+        AnimatedNavItem(ChatList, "Chats", Icons.Rounded.Chat, Icons.Outlined.Chat),
+        AnimatedNavItem(Settings, "Settings", Icons.Rounded.Settings, Icons.Outlined.Settings),
+    )
+
+    val showBottomNav = !navigationState.isDeepInStack
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomNav) {
+                AnimatedBottomNavBar(
+                    items = navBarItems,
+                    currentRoute = currentTopLevelRoute,
+                    onNavigate = { route -> navigator.navigate(route) }
+                )
+            }
         }
+    ) { innerPadding ->
+        NavDisplay(
+            entries = navigationState.toEntries(entryProvider),
+            onBack = { navigator.goBack() },
+            modifier = Modifier
+        )
     }
 }

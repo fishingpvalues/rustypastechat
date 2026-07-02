@@ -8,11 +8,14 @@ import kotlinx.coroutines.flow.first
 import okhttp3.ResponseBody
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class LlmRepository(
-    private val preferencesManager: PreferencesManager
+@Singleton
+class LlmRepository @Inject constructor(
+    private val preferencesManager: PreferencesManager,
+    private val apiClientFactory: ApiClientFactory
 ) {
-
     private var api: com.rustypastechat.data.api.OpenAiApi? = null
 
     private suspend fun getSettings() = preferencesManager.settingsFlow.first()
@@ -20,7 +23,7 @@ class LlmRepository(
     private suspend fun getApi(): com.rustypastechat.data.api.OpenAiApi {
         val settings = getSettings()
         if (api == null) {
-            api = ApiClientFactory.createOpenAiApi(settings.llmEndpoint)
+            api = apiClientFactory.createOpenAiApi(settings.llmEndpoint)
         }
         return api!!
     }

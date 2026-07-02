@@ -33,7 +33,19 @@ val SurfaceElevatedDark = Color(0xFF1C1C1F)
 val BackgroundDark = Color(0xFF000000)
 val SeparatorDark = Color(0xFF2D2D30)
 
-val BubbleOutgoing = Color(0xFF1A73E8)
-val BubbleOutgoingText = Color(0xFFFFFFFF)
-val BubbleIncoming = Color(0xFFE8EAED)
-val BubbleIncomingText = Color(0xFF1F1F1F)
+val BubbleOutgoingLight = Color(0xFF1A73E8)
+val BubbleOutgoingTextLight = Color(0xFFFFFFFF)
+val BubbleIncomingLight = Color(0xFFE8EAED)
+val BubbleIncomingTextLight = Color(0xFF1F1F1F)
+
+val BubbleOutgoingDark = Color(0xFF00518A)
+val BubbleOutgoingTextDark = Color(0xFFFFFFFF)
+val BubbleIncomingDark = Color(0xFF303134)
+val BubbleIncomingTextDark = Color(0xFFE8EAED)
+
+val ImportBgLight = Color(0xFFF0F4F8)
+val ImportBgDark = Color(0xFF1A1D21)
+val ImportTextLight = Color(0xFF5F6368)
+val ImportTextDark = Color(0xFF9AA0A6)
+
+val LinkBlueDark = Color(0xFF8AB4F8)

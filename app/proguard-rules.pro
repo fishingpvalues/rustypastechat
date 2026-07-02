@@ -36,3 +36,9 @@
 
 # Coil
 -keep class coil.** { *; }
+
+# Hilt / Dagger
+-dontwarn dagger.**
+-keep class dagger.** { *; }
+-keep class javax.inject.** { *; }
+-keep class * extends dagger.hilt.android.internal.managers.ViewComponentManager$FragmentContextWrapper { *; }

@@ -15,14 +15,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +52,6 @@ fun MessageInput(
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // + button (Google Messages style)
             IconButton(
                 onClick = { imagePickerLauncher.launch("image/*") },
                 modifier = Modifier.size(44.dp)
@@ -67,32 +64,31 @@ fun MessageInput(
                 )
             }
 
-            TextField(
+            OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
                 placeholder = {
-                    Text(
+                    androidx.compose.material3.Text(
                         "Text message",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 },
-                colors = TextFieldDefaults.colors(
+                colors = OutlinedTextFieldDefaults.colors(
                     unfocusedContainerColor = Color.Transparent,
                     focusedContainerColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = Color.Transparent,
                     cursorColor = MaterialTheme.colorScheme.primary
                 ),
                 maxLines = 4,
                 textStyle = MaterialTheme.typography.bodyLarge,
-                shape = RoundedCornerShape(24.dp)
+                shape = MaterialTheme.shapes.medium
             )
 
             Spacer(Modifier.width(4.dp))
 
-            // Send button (Google Messages: filled circle)
             FilledIconButton(
                 onClick = onSend,
                 enabled = enabled && value.isNotBlank(),

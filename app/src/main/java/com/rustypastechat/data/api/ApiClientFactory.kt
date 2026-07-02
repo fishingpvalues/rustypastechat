@@ -1,30 +1,25 @@
 package com.rustypastechat.data.api
 
-import com.rustypastechat.data.local.PreferencesManager
-import com.rustypastechat.data.model.AppSettings
-import com.rustypastechat.data.model.LlmChatRequest
-import com.rustypastechat.data.model.LlmChatResponse
-import com.rustypastechat.data.model.PasteItem
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
 
-object ApiClientFactory {
-
+@Singleton
+class ApiClientFactory @Inject constructor(
+    private val tokenProvider: PasteAuthInterceptor.TokenProvider
+) {
     private val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
     }
 
-    private fun createPasteHttpClient(tokenProvider: PasteAuthInterceptor.TokenProvider): OkHttpClient {
+    private fun createPasteHttpClient(): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
@@ -37,11 +32,11 @@ object ApiClientFactory {
             .build()
     }
 
-    fun createPasteApi(baseUrl: String, tokenProvider: PasteAuthInterceptor.TokenProvider): RustyPasteApi {
+    fun createPasteApi(baseUrl: String): RustyPasteApi {
         val url = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
         return Retrofit.Builder()
             .baseUrl(url)
-            .client(createPasteHttpClient(tokenProvider))
+            .client(createPasteHttpClient())
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(RustyPasteApi::class.java)

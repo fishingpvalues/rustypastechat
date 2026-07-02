@@ -1,12 +1,13 @@
 package com.rustypastechat.ui.chat.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.asState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,10 +22,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -33,13 +31,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
@@ -48,23 +47,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.model.MessageStatus
 import com.rustypastechat.ui.theme.Blue
-import com.rustypastechat.ui.theme.BubbleIncoming
-import com.rustypastechat.ui.theme.BubbleIncomingText
-import com.rustypastechat.ui.theme.BubbleOutgoing
-import com.rustypastechat.ui.theme.BubbleOutgoingText
+import com.rustypastechat.ui.theme.BubbleIncomingDark
+import com.rustypastechat.ui.theme.BubbleIncomingLight
+import com.rustypastechat.ui.theme.BubbleIncomingTextDark
+import com.rustypastechat.ui.theme.BubbleIncomingTextLight
+import com.rustypastechat.ui.theme.BubbleOutgoingDark
+import com.rustypastechat.ui.theme.BubbleOutgoingLight
+import com.rustypastechat.ui.theme.BubbleOutgoingTextDark
+import com.rustypastechat.ui.theme.BubbleOutgoingTextLight
 import com.rustypastechat.ui.theme.Green
+import com.rustypastechat.ui.theme.ImportBgDark
+import com.rustypastechat.ui.theme.ImportBgLight
+import com.rustypastechat.ui.theme.ImportTextDark
+import com.rustypastechat.ui.theme.ImportTextLight
+import com.rustypastechat.ui.theme.LinkBlueDark
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.regex.Pattern
-import kotlin.math.roundToInt
 
 private val URL_PATTERN = Pattern.compile("(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+)")
 
@@ -80,13 +87,14 @@ fun SwipeableMessageBubble(
     onLongPress: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var swipeOffset by remember { mutableFloatStateOf(0f) }
+    val offsetX = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
     val swipeThreshold = 120f
+    val swipeOffset by offsetX.asState()
 
     Box(modifier = modifier.fillMaxWidth()) {
         // Swipe action backgrounds
         if (swipeOffset > 30f) {
-            // Swiped right → Reply action
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -100,33 +108,38 @@ fun SwipeableMessageBubble(
             }
         }
         if (swipeOffset < -30f) {
-            // Swiped left → Delete action
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 12.dp)
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFEA4335).copy(alpha = 0.9f)),
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.9f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.Delete, "Delete", tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
 
-        // Main bubble content
         Box(
             modifier = Modifier
-                .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+                .graphicsLayer { translationX = swipeOffset }
                 .pointerInput(message.id) {
                     detectHorizontalDragGestures(
+                        onDragCancel = {
+                            scope.launch { offsetX.animateTo(0f, spring(Spring.StiffnessMedium, Spring.DampingRatioMediumBouncy)) }
+                        },
                         onDragEnd = {
                             if (swipeOffset > swipeThreshold) onReply(message.id)
                             else if (swipeOffset < -swipeThreshold) onDelete(message.id)
-                            swipeOffset = 0f
+                            scope.launch {
+                                offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioMediumBouncy))
+                            }
                         },
                         onHorizontalDrag = { _, dragAmount ->
-                            swipeOffset = (swipeOffset + dragAmount).coerceIn(-200f, 200f)
+                            scope.launch {
+                                offsetX.snapTo((swipeOffset + dragAmount).coerceIn(-200f, 200f))
+                            }
                         }
                     )
                 }
@@ -157,11 +170,20 @@ private fun MessageBubbleContent(
     onReply: (String) -> Unit,
     onForward: (String) -> Unit
 ) {
+    val darkTheme = isSystemInDarkTheme()
     val isOutgoing = message.isOutgoing
-    val bubbleColor = if (message.isImported) Color(0xFFF0F4F8)
-        else if (isOutgoing) BubbleOutgoing else BubbleIncoming
-    val textColor = if (message.isImported) Color(0xFF5F6368)
-        else if (isOutgoing) BubbleOutgoingText else BubbleIncomingText
+
+    val bubbleColor = when {
+        message.isImported -> if (darkTheme) ImportBgDark else ImportBgLight
+        isOutgoing -> if (darkTheme) BubbleOutgoingDark else BubbleOutgoingLight
+        else -> if (darkTheme) BubbleIncomingDark else BubbleIncomingLight
+    }
+    val textColor = when {
+        message.isImported -> if (darkTheme) ImportTextDark else ImportTextLight
+        isOutgoing -> if (darkTheme) BubbleOutgoingTextDark else BubbleOutgoingTextLight
+        else -> if (darkTheme) BubbleIncomingTextDark else BubbleIncomingTextLight
+    }
+
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
@@ -178,7 +200,6 @@ private fun MessageBubbleContent(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
         horizontalAlignment = rowAlignment
     ) {
-        // Reply preview
         if (!message.replyToText.isNullOrBlank()) {
             ReplyPreview(message.replyToText, message.replyToIsOutgoing ?: false)
         }
@@ -202,23 +223,25 @@ private fun MessageBubbleContent(
                 }
 
                 if (message.text.isNotBlank()) {
-                    RichTextContent(message.text, textColor)
+                    RichTextContent(message.text, textColor, darkTheme)
                 } else if (message.isLlmResponse && message.status != MessageStatus.FAILED) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = BubbleIncomingText)
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
-                        Text("Thinking...", color = BubbleIncomingText.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
+                        Text("Thinking...", color = textColor.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
                 if (message.isOneshot) {
                     Spacer(Modifier.height(2.dp))
-                    Text("View once", color = textColor.copy(alpha = 0.4f), fontSize = 10.sp,
+                    Text("View once", color = textColor.copy(alpha = 0.4f),
+                        fontSize = 10.sp,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                 }
                 if (message.isImported) {
                     Spacer(Modifier.height(2.dp))
-                    Text("Imported", color = textColor.copy(alpha = 0.5f), fontSize = 10.sp,
+                    Text("Imported", color = textColor.copy(alpha = 0.5f),
+                        fontSize = 10.sp,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                 }
 
@@ -236,7 +259,6 @@ private fun MessageBubbleContent(
             }
         }
 
-        // Error state
         if (message.status == MessageStatus.FAILED && isOutgoing) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                 Icon(Icons.Default.ErrorOutline, "Error", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
@@ -255,11 +277,17 @@ private fun MessageBubbleContent(
 
 @Composable
 private fun ReplyPreview(text: String, isOutgoing: Boolean) {
+    val darkTheme = isSystemInDarkTheme()
+    val accentColor = if (isOutgoing) {
+        if (darkTheme) BubbleOutgoingDark else BubbleOutgoingLight
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
     Row(modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)) {
         Box(
             Modifier.width(3.dp).height(32.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(if (isOutgoing) BubbleOutgoing else Blue)
+                .background(accentColor)
         )
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.bodySmall,
@@ -269,7 +297,8 @@ private fun ReplyPreview(text: String, isOutgoing: Boolean) {
 }
 
 @Composable
-private fun RichTextContent(text: String, textColor: Color) {
+private fun RichTextContent(text: String, textColor: Color, darkTheme: Boolean) {
+    val linkColor = if (darkTheme) LinkBlueDark else Blue
     val matcher = URL_PATTERN.matcher(text)
     val annotated = buildAnnotatedString {
         var lastEnd = 0
@@ -277,7 +306,7 @@ private fun RichTextContent(text: String, textColor: Color) {
             val start = matcher.start()
             val end = matcher.end()
             if (start > lastEnd) append(text.substring(lastEnd, start))
-            withStyle(SpanStyle(color = Color(0xFF8AB4F8), textDecoration = TextDecoration.Underline)) {
+            withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
                 append(matcher.group())
             }
             lastEnd = end

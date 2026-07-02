@@ -1,9 +1,7 @@
 package com.rustypastechat
 
 import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
 
-class RustyPasteChatApp : Application() {
-    override fun onCreate() {
-        super.onCreate()
-    }
-}
+@HiltAndroidApp
+class RustyPasteChatApp : Application()

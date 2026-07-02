@@ -1,19 +1,22 @@
 package com.rustypastechat.ui.chatlist
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.ChatThread
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.repository.PasteRepository
+import com.rustypastechat.ui.common.OneTimeEvent
 import com.rustypastechat.util.FuzzySearch
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
+import javax.inject.Inject
 
 data class ChatListState(
     val chats: List<ChatThread> = emptyList(),
@@ -23,12 +26,14 @@ data class ChatListState(
     val searchQuery: String = "",
     val searchResults: List<Message> = emptyList(),
     val isSearching: Boolean = false,
-    val error: String? = null
+    val error: OneTimeEvent<String?> = OneTimeEvent(null)
 )
 
-class ChatListViewModel(application: Application) : AndroidViewModel(application) {
-    private val prefs = PreferencesManager(application)
-    private val pasteRepo = PasteRepository(prefs)
+@HiltViewModel
+class ChatListViewModel @Inject constructor(
+    private val prefs: PreferencesManager,
+    private val pasteRepo: PasteRepository
+) : ViewModel() {
     private val _state = MutableStateFlow(ChatListState())
     val state: StateFlow<ChatListState> = _state.asStateFlow()
 
@@ -49,7 +54,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 _state.update { it.copy(chats = chats, allMessages = messages, isLoading = false) }
             }
             .onFailure { e ->
-                _state.update { it.copy(isLoading = false, error = e.message) }
+                _state.update { it.copy(isLoading = false, error = OneTimeEvent(e.message)) }
             }
     }
 
