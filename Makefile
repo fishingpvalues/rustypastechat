@@ -11,9 +11,11 @@ APK_DEBUG    = app/build/outputs/apk/debug/app-debug.apk
 APK_RELEASE  = app/build/outputs/apk/release/app-release-unsigned.apk
 TEST_RESULTS = app/build/test-results
 
-.PHONY: all debug release clean install uninstall lint test test-report
+.PHONY: all ci debug release clean install uninstall lint test test-report deps
 
 all: test debug
+
+ci: lint test debug
 
 debug:
 	$(GRADLE) assembleDebug --no-daemon
@@ -47,6 +49,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all          Run tests, then build debug APK (default)"
+	@echo "  ci           Full CI pipeline: lint + test + build debug APK"
 	@echo "  debug        Build debug APK"
 	@echo "  release      Build release APK (unsigned)"
 	@echo "  clean        Clean build artifacts"
