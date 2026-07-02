@@ -4,8 +4,12 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.api.ApiClientFactory
+import com.rustypastechat.data.backup.BackupManager
+import com.rustypastechat.data.backup.SftpConfig
+import com.rustypastechat.data.backup.SftpUploader
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.ChatThread
 import com.rustypastechat.data.model.ThemeMode
 import com.rustypastechat.security.EncryptedCache
 import com.rustypastechat.ui.common.OneTimeEvent
@@ -25,6 +29,15 @@ data class SettingsUiState(
     val testResult: String? = null,
     val cacheSize: String = "0 KB",
     val pasteCount: Int = 0,
+    val backupStatus: String? = null,
+    val sftpHost: String = "",
+    val sftpPort: String = "22",
+    val sftpUser: String = "",
+    val sftpPassword: String = "",
+    val sftpPath: String = "/",
+    val sftpTesting: Boolean = false,
+    val sftpResult: String? = null,
+    val backupFiles: List<java.io.File> = emptyList(),
     val error: OneTimeEvent<String?> = OneTimeEvent(null)
 )
 
@@ -33,7 +46,9 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val application: Application,
     private val preferencesManager: PreferencesManager,
     private val apiClientFactory: ApiClientFactory,
-    private val encryptedCache: EncryptedCache
+    private val encryptedCache: EncryptedCache,
+    private val backupManager: BackupManager,
+    private val sftpUploader: SftpUploader
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -138,6 +153,120 @@ class SettingsViewModel @Inject constructor(
             } else 0L
             _uiState.update { it.copy(cacheSize = formatBytes(encryptedSize + plainCacheSize)) }
         }
+    }
+
+    fun fetchBackups() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(backupFiles = backupManager.listBackups()) }
+        }
+    }
+
+    fun createBackup(chats: List<ChatThread>) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(backupStatus = "Creating encrypted backup...") }
+            val cacheFile = java.io.File(application.cacheDir, "backup.rpbackup")
+            backupManager.createBackup(chats, cacheFile)
+                .onSuccess {
+                    _uiState.update { it.copy(backupStatus = null) }
+                    val uri = backupManager.createShareableBackup(it)
+                    _shareBackupUri(uri)
+                    fetchBackups()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(backupStatus = null, error = OneTimeEvent("Backup failed: ${e.message}")) }
+                }
+        }
+    }
+
+    fun exportToSftp(chats: List<ChatThread>) {
+        val host = _uiState.value.sftpHost
+        val port = _uiState.value.sftpPort.toIntOrNull() ?: 22
+        val user = _uiState.value.sftpUser
+        if (host.isBlank() || user.isBlank()) {
+            _uiState.update { it.copy(sftpResult = "Host and username required") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(sftpTesting = true, sftpResult = "Creating backup...") }
+            val cacheFile = java.io.File(application.cacheDir, "sftp_backup.rpbackup")
+            backupManager.createBackup(chats, cacheFile)
+                .onSuccess { backupFile ->
+                    val config = SftpConfig(
+                        host = host, port = port, username = user,
+                        password = _uiState.value.sftpPassword,
+                        remotePath = _uiState.value.sftpPath.ifBlank { "/" }
+                    )
+                    sftpUploader.upload(backupFile, config) { progress ->
+                        _uiState.update { it.copy(sftpResult = progress) }
+                    }.onSuccess { path ->
+                        _uiState.update { it.copy(sftpTesting = false, sftpResult = "Uploaded to $path") }
+                        backupFile.delete()
+                    }.onFailure { e ->
+                        _uiState.update { it.copy(sftpTesting = false, sftpResult = "SFTP: ${e.message}") }
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(sftpTesting = false, sftpResult = "Backup failed: ${e.message}") }
+                }
+        }
+    }
+
+    fun testSftpConnection() {
+        val host = _uiState.value.sftpHost
+        val port = _uiState.value.sftpPort.toIntOrNull() ?: 22
+        val user = _uiState.value.sftpUser
+        if (host.isBlank() || user.isBlank()) {
+            _uiState.update { it.copy(sftpResult = "Host and username required") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(sftpTesting = true, sftpResult = "Testing..." ) }
+            val config = SftpConfig(
+                host = host, port = port, username = user,
+                password = _uiState.value.sftpPassword
+            )
+            sftpUploader.testConnection(config)
+                .onSuccess { _uiState.update { it.copy(sftpTesting = false, sftpResult = it) } }
+                .onFailure { e -> _uiState.update { it.copy(sftpTesting = false, sftpResult = "SFTP error: ${e.message}") } }
+        }
+    }
+
+    fun updateSftpHost(v: String) { _uiState.update { it.copy(sftpHost = v) } }
+    fun updateSftpPort(v: String) { _uiState.update { it.copy(sftpPort = v.filter { it.isDigit() } }) }
+    fun updateSftpUser(v: String) { _uiState.update { it.copy(sftpUser = v) } }
+    fun updateSftpPassword(v: String) { _uiState.update { it.copy(sftpPassword = v) } }
+    fun updateSftpPath(v: String) { _uiState.update { it.copy(sftpPath = v) } }
+
+    fun restoreBackup(uri: android.net.Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(backupStatus = "Restoring from backup...") }
+            backupManager.restoreBackupFromUri(uri)
+                .onSuccess { payload ->
+                    val settings = payload.settings.mergeInto(_uiState.value.settings)
+                    preferencesManager.saveSettings(settings)
+                    _uiState.update { it.copy(backupStatus = "Restored ${payload.chats.size} chats") }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(backupStatus = null, error = OneTimeEvent("Restore failed: ${e.message}")) }
+                }
+        }
+    }
+
+    fun deleteBackupFile(file: java.io.File) {
+        backupManager.deleteBackup(file)
+        fetchBackups()
+    }
+
+    private fun _shareBackupUri(uri: android.net.Uri) {
+        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/octet-stream"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        application.startActivity(
+            android.content.Intent.createChooser(shareIntent, "Share backup via")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
     private fun formatBytes(bytes: Long): String = when {

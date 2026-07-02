@@ -82,6 +82,9 @@ dependencies {
     implementation(libs.security.crypto)
     implementation(libs.biometric.ktx)
 
+    // SFTP backup
+    implementation(libs.jsch)
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

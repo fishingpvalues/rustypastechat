@@ -1,6 +1,8 @@
 package com.rustypastechat.ui.settings
 
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -99,6 +101,17 @@ fun SettingsScreen(
     onTestConnection: () -> Unit,
     onClearCache: () -> Unit,
     onFetchStats: () -> Unit,
+    onFetchBackups: () -> Unit,
+    onCreateBackup: (List<Any>) -> Unit,
+    onExportSftp: (List<Any>) -> Unit,
+    onTestSftp: () -> Unit,
+    onRestoreBackup: (android.net.Uri) -> Unit,
+    onDeleteBackup: (java.io.File) -> Unit,
+    onUpdateSftpHost: (String) -> Unit,
+    onUpdateSftpPort: (String) -> Unit,
+    onUpdateSftpUser: (String) -> Unit,
+    onUpdateSftpPassword: (String) -> Unit,
+    onUpdateSftpPath: (String) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
@@ -163,6 +176,17 @@ fun SettingsScreen(
                 uiState = uiState,
                 onClearCache = onClearCache,
                 onFetchStats = onFetchStats,
+                onFetchBackups = onFetchBackups,
+                onCreateBackup = onCreateBackup,
+                onExportSftp = onExportSftp,
+                onTestSftp = onTestSftp,
+                onRestoreBackup = onRestoreBackup,
+                onDeleteBackup = onDeleteBackup,
+                onUpdateSftpHost = onUpdateSftpHost,
+                onUpdateSftpPort = onUpdateSftpPort,
+                onUpdateSftpUser = onUpdateSftpUser,
+                onUpdateSftpPassword = onUpdateSftpPassword,
+                onUpdateSftpPath = onUpdateSftpPath,
                 onBack = { currentPage = SettingsPage.Main }
             )
             SettingsPage.About -> AboutPage(
@@ -652,32 +676,41 @@ private fun StoragePage(
     uiState: SettingsUiState,
     onClearCache: () -> Unit,
     onFetchStats: () -> Unit,
+    onFetchBackups: () -> Unit,
+    onCreateBackup: (List<Any>) -> Unit,
+    onExportSftp: (List<Any>) -> Unit,
+    onTestSftp: () -> Unit,
+    onRestoreBackup: (android.net.Uri) -> Unit,
+    onDeleteBackup: (java.io.File) -> Unit,
+    onUpdateSftpHost: (String) -> Unit,
+    onUpdateSftpPort: (String) -> Unit,
+    onUpdateSftpUser: (String) -> Unit,
+    onUpdateSftpPassword: (String) -> Unit,
+    onUpdateSftpPath: (String) -> Unit,
     onBack: () -> Unit
 ) {
     var showClearConfirm by remember { mutableStateOf(false) }
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { onRestoreBackup(it) } }
 
     SubPageScaffold(title = "Data & Storage", onBack = onBack) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+
+            // Cache
             GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     SectionLabel("Cache")
                     Spacer(Modifier.height(4.dp))
                     ListItem(
-                        headlineContent = {
-                            Text("Cache Size", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                        },
-                        supportingContent = {
-                            Text(uiState.cacheSize, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        },
-                        leadingContent = {
-                            Icon(Icons.Rounded.Storage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-                        },
+                        headlineContent = { Text("Cache Size", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium) },
+                        supportingContent = { Text(uiState.cacheSize, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        leadingContent = { Icon(Icons.Rounded.Storage, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp)) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     FilledTonalButton(
-                        onClick = { showClearConfirm = true },
-                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showClearConfirm = true }, modifier = Modifier.fillMaxWidth(),
                         enabled = uiState.cacheSize != "0 B" && uiState.cacheSize != "0 KB"
                     ) {
                         Icon(Icons.Rounded.Delete, null, Modifier.size(18.dp))
@@ -687,14 +720,137 @@ private fun StoragePage(
                 }
             }
 
+            // Backup & Restore
             Spacer(Modifier.height(12.dp))
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SectionLabel("Backup & Restore")
+                    Spacer(Modifier.height(4.dp))
 
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        FilledTonalButton(
+                            onClick = { onCreateBackup(emptyList()) }, modifier = Modifier.weight(1f),
+                            enabled = uiState.backupStatus == null
+                        ) {
+                            Icon(Icons.Rounded.Cloud, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Export Backup")
+                        }
+                        FilledTonalButton(
+                            onClick = { restoreLauncher.launch("*/*") }, modifier = Modifier.weight(1f),
+                            enabled = uiState.backupStatus == null
+                        ) {
+                            Icon(Icons.Rounded.Cloud, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Import")
+                        }
+                    }
+                    uiState.backupStatus?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+
+            // SFTP Server
+            Spacer(Modifier.height(12.dp))
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SectionLabel("SFTP Backup Server")
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = uiState.sftpHost, onValueChange = onUpdateSftpHost,
+                        label = { Text("Host") }, placeholder = { Text("sftp.example.com") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = uiState.sftpPort, onValueChange = onUpdateSftpPort,
+                            label = { Text("Port") }, placeholder = { Text("22") },
+                            modifier = Modifier.weight(0.3f), singleLine = true,
+                            shape = MaterialTheme.shapes.medium
+                        )
+                        OutlinedTextField(
+                            value = uiState.sftpUser, onValueChange = onUpdateSftpUser,
+                            label = { Text("Username") },
+                            modifier = Modifier.weight(0.7f), singleLine = true,
+                            shape = MaterialTheme.shapes.medium
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = uiState.sftpPassword, onValueChange = onUpdateSftpPassword,
+                        label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = uiState.sftpPath, onValueChange = onUpdateSftpPath,
+                        label = { Text("Remote path") }, placeholder = { Text("/backups") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        FilledTonalButton(
+                            onClick = onTestSftp, modifier = Modifier.weight(1f),
+                            enabled = !uiState.sftpTesting
+                        ) { Text("Test") }
+                        FilledTonalButton(
+                            onClick = { onExportSftp(emptyList()) }, modifier = Modifier.weight(1f),
+                            enabled = !uiState.sftpTesting
+                        ) { Text("Upload Backup") }
+                    }
+                    uiState.sftpResult?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall,
+                            color = if (it.startsWith("Uploaded") || it.startsWith("Connected")) MaterialTheme.colorScheme.primary
+                            else if (it.startsWith("SFTP")) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // Backup history
+            if (uiState.backupFiles.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        SectionLabel("Backup History")
+                        Spacer(Modifier.height(4.dp))
+                        uiState.backupFiles.forEach { file ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(file.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        "${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))} | ${file.length() / 1024} KB",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteBackup(file) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Rounded.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            if (file != uiState.backupFiles.last()) HorizontalDivider()
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
             GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     SectionLabel("Info")
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Chat history is stored as paste files on your rustypaste server. The app cache contains downloaded file content and images. Clearing the cache frees up local storage without affecting your data on the server.",
+                        "Backups are encrypted with AES-256-GCM using the Android Keystore. Export to SFTP for off-device storage. Chat history remains on your rustypaste server.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -708,14 +864,8 @@ private fun StoragePage(
             onDismissRequest = { showClearConfirm = false },
             title = { Text("Clear Cache") },
             text = { Text("Remove all cached files and images? Your chat data on the server will not be affected.") },
-            confirmButton = {
-                TextButton(onClick = { onClearCache(); showClearConfirm = false }) {
-                    Text("Clear", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") }
-            }
+            confirmButton = { TextButton(onClick = { onClearCache(); showClearConfirm = false }) { Text("Clear", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") } }
         )
     }
 }
