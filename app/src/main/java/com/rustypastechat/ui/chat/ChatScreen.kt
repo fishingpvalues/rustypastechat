@@ -84,12 +84,19 @@ import androidx.compose.ui.unit.sp
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.ui.chat.components.EmptyChatState
 import com.rustypastechat.ui.chat.components.AnimatedTypingIndicator
+import com.rustypastechat.ui.chat.components.EmptyChatState
+import com.rustypastechat.ui.chat.components.MediaGalleryGrid
 import com.rustypastechat.ui.chat.components.MessageInput
-import com.rustypastechat.ui.chat.components.SwipeableMessageBubble
 import com.rustypastechat.ui.chat.components.formatDateHeader
 import com.rustypastechat.ui.chat.components.shouldShowDateHeader
+import com.rustypastechat.ui.chat.components.SwipeableMessageBubble
 import com.rustypastechat.ui.theme.Blue
 import kotlinx.coroutines.launch
+
+private sealed interface ChatListItem {
+    data class Single(val msg: Message) : ChatListItem
+    data class Group(val msgs: List<Message>) : ChatListItem
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -360,47 +367,100 @@ fun ChatScreen(
                 }
                 else -> {
                     PullToRefreshBox(isRefreshing = uiState.isRefreshing, onRefresh = onRefresh) {
-                        val messagesWithHeaders = remember(displayMessages, uiState.settings.showDateHeaders) {
+                        val chatItems = remember(displayMessages, uiState.settings.showDateHeaders) {
                             buildList {
-                                displayMessages.forEachIndexed { index, msg ->
-                                    if (uiState.settings.showDateHeaders) {
-                                        val prevTimestamp = displayMessages.getOrNull(index - 1)?.timestamp
-                                        if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
-                                            add(null to formatDateHeader(msg.timestamp))
+                                var pendingMediaGroup = mutableListOf<Message>()
+                                var lastGroupSender: Boolean? = null
+
+                                fun flushMediaGroup() {
+                                    if (pendingMediaGroup.isNotEmpty()) {
+                                        if (pendingMediaGroup.size == 1) {
+                                            add(ChatListItem.Single(pendingMediaGroup[0]))
+                                        } else {
+                                            add(ChatListItem.Group(pendingMediaGroup.toList()))
                                         }
+                                        pendingMediaGroup = mutableListOf()
                                     }
-                                    add(msg to null)
+                                    lastGroupSender = null
                                 }
+
+                                displayMessages.forEachIndexed { index, msg ->
+                                    val isMediaOnly = msg.mediaUrl != null &&
+                                        msg.mediaType != com.rustypastechat.data.model.MediaType.FILE &&
+                                        msg.text.isBlank() &&
+                                        !msg.isOneshot &&
+                                        !msg.isImported
+
+                                    val canGroup = isMediaOnly &&
+                                        msg.status != com.rustypastechat.data.model.MessageStatus.FAILED &&
+                                        (lastGroupSender == null || lastGroupSender == msg.isOutgoing)
+
+                                    if (!canGroup) {
+                                        flushMediaGroup()
+                                        if (uiState.settings.showDateHeaders) {
+                                            val prevTimestamp = if (index > 0) displayMessages[index - 1].timestamp else null
+                                            if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
+                                                add(ChatListItem.Single(msg.copy(text = "\u0000header:${formatDateHeader(msg.timestamp)}")))
+                                            }
+                                        }
+                                        add(ChatListItem.Single(msg))
+                                    } else {
+                                        if (uiState.settings.showDateHeaders && pendingMediaGroup.isEmpty()) {
+                                            val prevTimestamp = if (index > 0) displayMessages[index - 1].timestamp else null
+                                            if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
+                                                add(ChatListItem.Single(msg.copy(text = "\u0000header:${formatDateHeader(msg.timestamp)}")))
+                                            }
+                                        }
+                                        pendingMediaGroup.add(msg)
+                                        lastGroupSender = msg.isOutgoing
+                                    }
+                                }
+                                flushMediaGroup()
                             }
                         }
                         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
                             items(
-                                items = messagesWithHeaders,
-                                key = { (msg, header) -> msg?.id ?: "header_$header" }
-                            ) { (message, header) ->
-                                if (message != null) {
-                                    SwipeableMessageBubble(
-                                        message = message, isSelected = message.id in selectedIds,
-                                        onRetry = onRetryMessage,
-                                        onDelete = { deleteConfirmId = it },
-                                        onCopy = onCopyMessage,
-                                        onReply = onReplyToMessage,
-                                        onForward = onForwardMessage,
-                                        onLongPress = { id ->
-                                            selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+                                items = chatItems,
+                                key = { item ->
+                                    when (item) {
+                                        is ChatListItem.Single -> item.msg.id
+                                        is ChatListItem.Group -> "group_${item.msgs.first().id}"
+                                    }
+                                }
+                            ) { item ->
+                                when (item) {
+                                    is ChatListItem.Single -> {
+                                        if (item.msg.text.startsWith("\u0000header:")) {
+                                            Text(
+                                                text = item.msg.text.removePrefix("\u0000header:"),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                                textAlign = TextAlign.Center
+                                            )
+                                        } else {
+                                            SwipeableMessageBubble(
+                                                message = item.msg, isSelected = item.msg.id in selectedIds,
+                                                onRetry = onRetryMessage,
+                                                onDelete = { deleteConfirmId = it },
+                                                onCopy = onCopyMessage,
+                                                onReply = onReplyToMessage,
+                                                onForward = onForwardMessage,
+                                                onLongPress = { id ->
+                                                    selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+                                                }
+                                            )
                                         }
-                                    )
-                                } else if (header != null) {
-                                    Text(
-                                        text = header,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
+                                    }
+                                    is ChatListItem.Group -> {
+                                        MediaGalleryGrid(
+                                            messages = item.msgs,
+                                            modifier = Modifier.padding(vertical = 3.dp)
+                                        )
+                                    }
                                 }
                             }
                             if (uiState.isLlmTyping) item(key = "typing") { AnimatedTypingIndicator() }

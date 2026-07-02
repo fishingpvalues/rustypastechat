@@ -7,6 +7,7 @@ import com.rustypastechat.data.api.ApiClientFactory
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
 import com.rustypastechat.data.model.ThemeMode
+import com.rustypastechat.security.EncryptedCache
 import com.rustypastechat.ui.common.OneTimeEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -31,7 +32,8 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val application: Application,
     private val preferencesManager: PreferencesManager,
-    private val apiClientFactory: ApiClientFactory
+    private val apiClientFactory: ApiClientFactory,
+    private val encryptedCache: EncryptedCache
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -120,6 +122,7 @@ class SettingsViewModel @Inject constructor(
 
     fun clearCache() {
         viewModelScope.launch {
+            encryptedCache.clearAll()
             val cacheDir = application.cacheDir
             cacheDir.deleteRecursively()
             _uiState.update { it.copy(cacheSize = "0 KB") }
@@ -128,11 +131,12 @@ class SettingsViewModel @Inject constructor(
 
     fun fetchStats() {
         viewModelScope.launch {
+            val encryptedSize = encryptedCache.getCacheSizeBytes()
             val cacheDir = application.cacheDir
-            val cacheSize = if (cacheDir.exists()) {
+            val plainCacheSize = if (cacheDir.exists()) {
                 cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
             } else 0L
-            _uiState.update { it.copy(cacheSize = formatBytes(cacheSize)) }
+            _uiState.update { it.copy(cacheSize = formatBytes(encryptedSize + plainCacheSize)) }
         }
     }
 
