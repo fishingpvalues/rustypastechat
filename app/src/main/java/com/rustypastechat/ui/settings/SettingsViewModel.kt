@@ -226,8 +226,8 @@ class SettingsViewModel @Inject constructor(
                 password = _uiState.value.sftpPassword
             )
             sftpUploader.testConnection(config)
-                .onSuccess { _uiState.update { it.copy(sftpTesting = false, sftpResult = it) } }
-                .onFailure { e -> _uiState.update { it.copy(sftpTesting = false, sftpResult = "SFTP error: ${e.message}") } }
+                .onSuccess { msg -> _uiState.update { state -> state.copy(sftpTesting = false, sftpResult = msg) } }
+                .onFailure { e -> _uiState.update { state -> state.copy(sftpTesting = false, sftpResult = "SFTP error: ${e.message}") } }
         }
     }
 

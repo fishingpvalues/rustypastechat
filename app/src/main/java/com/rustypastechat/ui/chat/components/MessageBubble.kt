@@ -2,7 +2,6 @@ package com.rustypastechat.ui.chat.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.asState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,10 +29,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,11 +92,15 @@ fun SwipeableMessageBubble(
     val offsetX = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val swipeThreshold = 120f
-    val swipeOffset by offsetX.asState()
+    var swipeDisplay by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(offsetX) {
+        snapshotFlow { offsetX.value }.collect { swipeDisplay = it }
+    }
 
     Box(modifier = modifier.fillMaxWidth()) {
         // Swipe action backgrounds
-        if (swipeOffset > 30f) {
+        if (swipeDisplay > 30f) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -107,7 +113,7 @@ fun SwipeableMessageBubble(
                 Icon(Icons.Default.Reply, "Reply", tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
-        if (swipeOffset < -30f) {
+        if (swipeDisplay < -30f) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
@@ -123,22 +129,22 @@ fun SwipeableMessageBubble(
 
         Box(
             modifier = Modifier
-                .graphicsLayer { translationX = swipeOffset }
+                .graphicsLayer { translationX = swipeDisplay }
                 .pointerInput(message.id) {
                     detectHorizontalDragGestures(
                         onDragCancel = {
                             scope.launch { offsetX.animateTo(0f, spring(Spring.StiffnessMedium, Spring.DampingRatioMediumBouncy)) }
                         },
                         onDragEnd = {
-                            if (swipeOffset > swipeThreshold) onReply(message.id)
-                            else if (swipeOffset < -swipeThreshold) onDelete(message.id)
+                            if (swipeDisplay > swipeThreshold) onReply(message.id)
+                            else if (swipeDisplay < -swipeThreshold) onDelete(message.id)
                             scope.launch {
                                 offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioMediumBouncy))
                             }
                         },
                         onHorizontalDrag = { _, dragAmount ->
                             scope.launch {
-                                offsetX.snapTo((swipeOffset + dragAmount).coerceIn(-200f, 200f))
+                                offsetX.snapTo((swipeDisplay + dragAmount).coerceIn(-200f, 200f))
                             }
                         }
                     )
