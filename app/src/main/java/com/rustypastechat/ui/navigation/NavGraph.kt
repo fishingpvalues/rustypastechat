@@ -1,5 +1,6 @@
 package com.rustypastechat.ui.navigation
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.Settings
@@ -70,7 +71,7 @@ fun NavGraph() {
         NavDisplay(
             entries = navigationState.toEntries(entryProvider),
             onBack = { navigator.goBack() },
-            modifier = Modifier
+            modifier = Modifier.padding(innerPadding)
         )
     }
 }
