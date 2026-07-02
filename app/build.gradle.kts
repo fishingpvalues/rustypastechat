@@ -92,7 +92,7 @@ dependencies {
     implementation(libs.biometric.ktx)
 
     // SFTP backup
-    implementation(libs.jsch)
+    // implementation(libs.jsch) // JSch has META-INF conflicts
 
     // Image processing
     implementation(libs.exifinterface)
