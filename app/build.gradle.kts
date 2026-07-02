@@ -45,11 +45,12 @@ android {
     }
 
     packaging {
-        resources.excludes.add("META-INF/AL2.0")
-        resources.excludes.add("META-INF/LGPL2.1")
-        resources.excludes.add("META-INF/LICENSE.md")
-        resources.excludes.add("META-INF/NOTICE.md")
-        resources.pickFirsts.add("META-INF/services/**")
+        jniLibs {
+            pickFirsts.add("**/libjsch*.so")
+        }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,NOTICE.md}"
+        }
     }
 
     buildFeatures {
