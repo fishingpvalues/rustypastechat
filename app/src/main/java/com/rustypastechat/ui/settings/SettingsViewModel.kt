@@ -232,7 +232,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateSftpHost(v: String) { _uiState.update { it.copy(sftpHost = v) } }
-    fun updateSftpPort(v: String) { _uiState.update { it.copy(sftpPort = v.filter { it.isDigit() } }) }
+    fun updateSftpPort(v: String) {
+        val digits = v.filter { c -> c.isDigit() }
+        _uiState.update { it.copy(sftpPort = digits) }
+    }
     fun updateSftpUser(v: String) { _uiState.update { it.copy(sftpUser = v) } }
     fun updateSftpPassword(v: String) { _uiState.update { it.copy(sftpPassword = v) } }
     fun updateSftpPath(v: String) { _uiState.update { it.copy(sftpPath = v) } }
