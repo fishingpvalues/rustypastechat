@@ -1,6 +1,7 @@
 package com.rustypastechat.ui.settings
 
-import android.app.Application
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustypastechat.data.api.ApiClientFactory
@@ -43,7 +44,7 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    @ApplicationContext private val application: Application,
+    @ApplicationContext private val context: Context,
     private val preferencesManager: PreferencesManager,
     private val apiClientFactory: ApiClientFactory,
     private val encryptedCache: EncryptedCache,
@@ -138,7 +139,7 @@ class SettingsViewModel @Inject constructor(
     fun clearCache() {
         viewModelScope.launch {
             encryptedCache.clearAll()
-            val cacheDir = application.cacheDir
+            val cacheDir = context.cacheDir
             cacheDir.deleteRecursively()
             _uiState.update { it.copy(cacheSize = "0 KB") }
         }
@@ -147,7 +148,7 @@ class SettingsViewModel @Inject constructor(
     fun fetchStats() {
         viewModelScope.launch {
             val encryptedSize = encryptedCache.getCacheSizeBytes()
-            val cacheDir = application.cacheDir
+            val cacheDir = context.cacheDir
             val plainCacheSize = if (cacheDir.exists()) {
                 cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
             } else 0L
@@ -164,7 +165,7 @@ class SettingsViewModel @Inject constructor(
     fun createBackup(chats: List<ChatThread>) {
         viewModelScope.launch {
             _uiState.update { it.copy(backupStatus = "Creating encrypted backup...") }
-            val cacheFile = java.io.File(application.cacheDir, "backup.rpbackup")
+            val cacheFile = java.io.File(context.cacheDir, "backup.rpbackup")
             backupManager.createBackup(chats, cacheFile)
                 .onSuccess {
                     _uiState.update { it.copy(backupStatus = null) }
@@ -188,7 +189,7 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(sftpTesting = true, sftpResult = "Creating backup...") }
-            val cacheFile = java.io.File(application.cacheDir, "sftp_backup.rpbackup")
+            val cacheFile = java.io.File(context.cacheDir, "sftp_backup.rpbackup")
             backupManager.createBackup(chats, cacheFile)
                 .onSuccess { backupFile ->
                     val config = SftpConfig(
@@ -266,7 +267,7 @@ class SettingsViewModel @Inject constructor(
             putExtra(android.content.Intent.EXTRA_STREAM, uri)
             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        application.startActivity(
+        context.startActivity(
             android.content.Intent.createChooser(shareIntent, "Share backup via")
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
