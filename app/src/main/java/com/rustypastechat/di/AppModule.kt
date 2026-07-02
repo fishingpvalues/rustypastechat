@@ -7,7 +7,6 @@ import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.repository.LlmRepository
 import com.rustypastechat.data.repository.PasteRepository
 import com.rustypastechat.security.BiometricLockManager
-import com.rustypastechat.security.EncryptedCache
 import com.rustypastechat.security.SecurePreferences
 import dagger.Module
 import dagger.Provides
@@ -34,11 +33,6 @@ annotation class DefaultDispatcher
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-
-    @Provides
-    @Singleton
-    fun providePreferencesManager(@ApplicationContext context: Context): PreferencesManager =
-        PreferencesManager(context)
 
     @Provides
     @Singleton
@@ -87,9 +81,4 @@ object AppModule {
     @Singleton
     fun provideBiometricLockManager(@ApplicationContext context: Context): BiometricLockManager =
         BiometricLockManager(context)
-
-    @Provides
-    @Singleton
-    fun provideEncryptedCache(@ApplicationContext context: Context): EncryptedCache =
-        EncryptedCache(context)
 }
