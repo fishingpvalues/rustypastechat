@@ -49,6 +49,7 @@ android {
         resources.excludes.add("META-INF/LGPL2.1")
         resources.excludes.add("META-INF/LICENSE.md")
         resources.excludes.add("META-INF/NOTICE.md")
+        resources.pickFirsts.add("META-INF/services/**")
     }
 
     buildFeatures {
