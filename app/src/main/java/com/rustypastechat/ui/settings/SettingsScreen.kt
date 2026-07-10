@@ -1,6 +1,7 @@
 package com.rustypastechat.ui.settings
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DarkMode
@@ -40,6 +42,10 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.TextFormat
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -63,6 +69,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -70,7 +78,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.rustypastechat.data.model.ThemeMode
 import com.rustypastechat.ui.components.GlassCard
-import com.rustypastechat.ui.theme.Blue
 
 private sealed class SettingsPage(val ordinal: Int) {
     object Main : SettingsPage(0)
@@ -79,7 +86,8 @@ private sealed class SettingsPage(val ordinal: Int) {
     object Llm : SettingsPage(3)
     object Security : SettingsPage(4)
     object Storage : SettingsPage(5)
-    object About : SettingsPage(6)
+    object Tools : SettingsPage(6)
+    object About : SettingsPage(7)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +106,10 @@ fun SettingsScreen(
     onUpdateThemeMode: (ThemeMode) -> Unit,
     onUpdateDynamicColor: (Boolean) -> Unit,
     onUpdateShowDateHeaders: (Boolean) -> Unit,
+    onUpdateMarkdownEnabled: (Boolean) -> Unit,
+    onUpdateVoiceQuality: (com.rustypastechat.data.model.VoiceQuality) -> Unit,
+    onUpdateImageQuality: (com.rustypastechat.data.model.ImageQuality) -> Unit,
+    onUpdateEncryptMediaCache: (Boolean) -> Unit,
     onSave: () -> Unit,
     onTestConnection: () -> Unit,
     onClearCache: () -> Unit,
@@ -116,6 +128,14 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
+
+    // Settings' sub-pages aren't nav-graph destinations (they're local AnimatedContent
+    // state), so without this the system back button/gesture would skip past them
+    // straight to ChatList instead of returning to the Settings main page first —
+    // inconsistent with every other back-navigation in the app.
+    BackHandler(enabled = currentPage != SettingsPage.Main) {
+        currentPage = SettingsPage.Main
+    }
 
     AnimatedContent(
         targetState = currentPage.ordinal,
@@ -138,6 +158,7 @@ fun SettingsScreen(
                 onLlmSettings = { currentPage = SettingsPage.Llm },
                 onSecuritySettings = { currentPage = SettingsPage.Security },
                 onStorageSettings = { currentPage = SettingsPage.Storage },
+                onToolsSettings = { currentPage = SettingsPage.Tools },
                 onAbout = { currentPage = SettingsPage.About },
                 uiState = uiState
             )
@@ -146,6 +167,7 @@ fun SettingsScreen(
                 onUpdateThemeMode = onUpdateThemeMode,
                 onUpdateDynamicColor = onUpdateDynamicColor,
                 onUpdateShowDateHeaders = onUpdateShowDateHeaders,
+                onUpdateMarkdownEnabled = onUpdateMarkdownEnabled,
                 onSave = { onSave(); currentPage = SettingsPage.Main },
                 onBack = { currentPage = SettingsPage.Main }
             )
@@ -188,6 +210,12 @@ fun SettingsScreen(
                 onUpdateSftpUser = onUpdateSftpUser,
                 onUpdateSftpPassword = onUpdateSftpPassword,
                 onUpdateSftpPath = onUpdateSftpPath,
+                onUpdateVoiceQuality = onUpdateVoiceQuality,
+                onUpdateImageQuality = onUpdateImageQuality,
+                onUpdateEncryptMediaCache = onUpdateEncryptMediaCache,
+                onBack = { currentPage = SettingsPage.Main }
+            )
+            SettingsPage.Tools -> com.rustypastechat.ui.tools.ToolsPage(
                 onBack = { currentPage = SettingsPage.Main }
             )
             SettingsPage.About -> AboutPage(
@@ -207,7 +235,13 @@ private fun SubPageScaffold(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        title,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics { heading() }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -246,7 +280,9 @@ private fun SectionLabel(text: String) {
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+        modifier = Modifier
+            .padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+            .semantics { heading() }
     )
 }
 
@@ -259,6 +295,7 @@ private fun MainPage(
     onLlmSettings: () -> Unit,
     onSecuritySettings: () -> Unit,
     onStorageSettings: () -> Unit,
+    onToolsSettings: () -> Unit,
     onAbout: () -> Unit,
     uiState: SettingsUiState
 ) {
@@ -267,7 +304,13 @@ private fun MainPage(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        "Settings",
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics { heading() }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -357,6 +400,21 @@ private fun MainPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // TOOLS
+            GlassCard(modifier = Modifier.padding(horizontal = 16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(4.dp)) {
+                    SectionLabel("Developer Tools")
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Build,
+                        title = "Tools",
+                        subtitle = "UUID, hashes, Base64, JSON, QR, diff",
+                        onClick = onToolsSettings
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // ABOUT
             GlassCard(modifier = Modifier.padding(horizontal = 16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(modifier = Modifier.padding(4.dp)) {
@@ -381,6 +439,7 @@ private fun AppearancePage(
     onUpdateThemeMode: (ThemeMode) -> Unit,
     onUpdateDynamicColor: (Boolean) -> Unit,
     onUpdateShowDateHeaders: (Boolean) -> Unit,
+    onUpdateMarkdownEnabled: (Boolean) -> Unit,
     onSave: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -464,6 +523,28 @@ private fun AppearancePage(
                             Text("Show date separators in chat", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = s.showDateHeaders, onCheckedChange = onUpdateShowDateHeaders)
+                    }
+                }
+            }
+
+            // Markdown formatting
+            Spacer(modifier = Modifier.height(12.dp))
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.TextFormat, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Markdown Formatting", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text(
+                                "Render **bold**, headings, lists, code blocks, and diagrams. Turn off to show messages as plain typed text.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = s.markdownEnabled, onCheckedChange = onUpdateMarkdownEnabled)
                     }
                 }
             }
@@ -688,6 +769,9 @@ private fun StoragePage(
     onUpdateSftpUser: (String) -> Unit,
     onUpdateSftpPassword: (String) -> Unit,
     onUpdateSftpPath: (String) -> Unit,
+    onUpdateVoiceQuality: (com.rustypastechat.data.model.VoiceQuality) -> Unit,
+    onUpdateImageQuality: (com.rustypastechat.data.model.ImageQuality) -> Unit,
+    onUpdateEncryptMediaCache: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -717,6 +801,67 @@ private fun StoragePage(
                         Icon(Icons.Rounded.Delete, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Clear Cache")
+                    }
+                }
+            }
+
+            // Media quality & encryption
+            Spacer(Modifier.height(12.dp))
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SectionLabel("Media")
+
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.HighQuality, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Photo quality", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        com.rustypastechat.data.model.ImageQuality.entries.forEach { quality ->
+                            FilterChip(
+                                selected = uiState.settings.imageQuality == quality,
+                                onClick = { onUpdateImageQuality(quality) },
+                                label = { Text(quality.label, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.Mic, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Voice message quality", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        com.rustypastechat.data.model.VoiceQuality.entries.forEach { quality ->
+                            FilterChip(
+                                selected = uiState.settings.voiceQuality == quality,
+                                onClick = { onUpdateVoiceQuality(quality) },
+                                label = { Text(quality.label, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Encrypt Media Cache", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text(
+                                "Store downloaded photos/videos encrypted on-device instead of in Coil's plain image cache. Slightly slower to load.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = uiState.settings.encryptMediaCache, onCheckedChange = onUpdateEncryptMediaCache)
                     }
                 }
             }
@@ -877,7 +1022,13 @@ private fun AboutPage(onBack: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
             GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, elevated = true) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("RustyPaste Chat", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Blue)
+                    com.rustypastechat.ui.components.RustyMark(
+                        modifier = Modifier.size(56.dp),
+                        markColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("RustyPaste Chat", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(4.dp))
                     Text("Version 1.0.0", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(16.dp))
@@ -895,28 +1046,28 @@ private fun AboutPage(onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(4.dp)) {
                     ListItem(
                         headlineContent = { Text("Built with Jetpack Compose") },
-                        leadingContent = { Icon(Icons.Rounded.Palette, null, tint = Blue, modifier = Modifier.size(20.dp)) },
+                        leadingContent = { Icon(Icons.Rounded.Palette, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         supportingContent = { Text("Modern declarative UI toolkit", style = MaterialTheme.typography.bodySmall) }
                     )
                     HorizontalDivider()
                     ListItem(
                         headlineContent = { Text("Material Design 3") },
-                        leadingContent = { Icon(Icons.Rounded.Palette, null, tint = Blue, modifier = Modifier.size(20.dp)) },
+                        leadingContent = { Icon(Icons.Rounded.Palette, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         supportingContent = { Text("Dynamic theming and adaptive layouts", style = MaterialTheme.typography.bodySmall) }
                     )
                     HorizontalDivider()
                     ListItem(
                         headlineContent = { Text("Powered by rustypaste") },
-                        leadingContent = { Icon(Icons.Rounded.Cloud, null, tint = Blue, modifier = Modifier.size(20.dp)) },
+                        leadingContent = { Icon(Icons.Rounded.Cloud, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         supportingContent = { Text("Self-hosted pastebin backend", style = MaterialTheme.typography.bodySmall) }
                     )
                     HorizontalDivider()
                     ListItem(
                         headlineContent = { Text("Hilt Dependency Injection") },
-                        leadingContent = { Icon(Icons.Rounded.Cloud, null, tint = Blue, modifier = Modifier.size(20.dp)) },
+                        leadingContent = { Icon(Icons.Rounded.Cloud, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         supportingContent = { Text("Clean architecture with DI", style = MaterialTheme.typography.bodySmall) }
                     )

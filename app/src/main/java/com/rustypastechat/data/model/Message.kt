@@ -100,5 +100,6 @@ data class ReplyTarget(
 enum class MediaType {
     IMAGE,
     VIDEO,
+    AUDIO,
     FILE
 }

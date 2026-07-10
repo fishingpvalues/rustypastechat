@@ -6,12 +6,16 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.ImageQuality
 import com.rustypastechat.data.model.ThemeMode
+import com.rustypastechat.data.model.VoiceQuality
 import com.rustypastechat.security.SecurePreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,6 +36,12 @@ class PreferencesManager @Inject constructor(
         private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         private val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         private val KEY_SHOW_DATE_HEADERS = booleanPreferencesKey("date_headers")
+        private val KEY_ONBOARDING_SEEN = booleanPreferencesKey("onboarding_seen")
+        private val KEY_STARRED_IDS = stringSetPreferencesKey("starred_message_ids")
+        private val KEY_MARKDOWN_ENABLED = booleanPreferencesKey("markdown_enabled")
+        private val KEY_VOICE_QUALITY = stringPreferencesKey("voice_quality")
+        private val KEY_IMAGE_QUALITY = stringPreferencesKey("image_quality")
+        private val KEY_ENCRYPT_MEDIA_CACHE = booleanPreferencesKey("encrypt_media_cache")
     }
 
     private val securePrefs = SecurePreferences(context)
@@ -49,13 +59,46 @@ class PreferencesManager @Inject constructor(
             biometricEnabled = securePrefs.biometricEnabled,
             lockTimeoutSeconds = securePrefs.lockTimeoutSeconds,
             themeMode = try { ThemeMode.valueOf(prefs[KEY_THEME_MODE] ?: "SYSTEM") } catch (_: Exception) { ThemeMode.SYSTEM },
-            useDynamicColor = prefs[KEY_DYNAMIC_COLOR] ?: true,
-            showDateHeaders = prefs[KEY_SHOW_DATE_HEADERS] ?: true
+            useDynamicColor = prefs[KEY_DYNAMIC_COLOR] ?: false,
+            showDateHeaders = prefs[KEY_SHOW_DATE_HEADERS] ?: true,
+            markdownEnabled = prefs[KEY_MARKDOWN_ENABLED] ?: true,
+            voiceQuality = try { VoiceQuality.valueOf(prefs[KEY_VOICE_QUALITY] ?: "STANDARD") } catch (_: Exception) { VoiceQuality.STANDARD },
+            imageQuality = try { ImageQuality.valueOf(prefs[KEY_IMAGE_QUALITY] ?: "STANDARD") } catch (_: Exception) { ImageQuality.STANDARD },
+            encryptMediaCache = prefs[KEY_ENCRYPT_MEDIA_CACHE] ?: true
         )
     }
 
     val authTokenSync: String?
         get() = securePrefs.authToken.ifBlank { null }
+
+    val hasSeenOnboardingFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_ONBOARDING_SEEN] ?: false
+    }
+
+    suspend fun setOnboardingSeen() {
+        context.dataStore.edit { prefs -> prefs[KEY_ONBOARDING_SEEN] = true }
+    }
+
+    suspend fun getDraft(chatId: String): String {
+        return context.dataStore.data.map { prefs -> prefs[draftKey(chatId)] ?: "" }.first()
+    }
+
+    suspend fun saveDraft(chatId: String, text: String) {
+        context.dataStore.edit { prefs ->
+            val key = draftKey(chatId)
+            if (text.isBlank()) prefs.remove(key) else prefs[key] = text
+        }
+    }
+
+    private fun draftKey(chatId: String) = stringPreferencesKey("draft_$chatId")
+
+    val starredIdsFlow: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        prefs[KEY_STARRED_IDS] ?: emptySet()
+    }
+
+    suspend fun saveStarredIds(ids: Set<String>) {
+        context.dataStore.edit { prefs -> prefs[KEY_STARRED_IDS] = ids }
+    }
 
     suspend fun saveSettings(settings: AppSettings) {
         context.dataStore.edit { prefs ->
@@ -66,6 +109,10 @@ class PreferencesManager @Inject constructor(
             prefs[KEY_THEME_MODE] = settings.themeMode.name
             prefs[KEY_DYNAMIC_COLOR] = settings.useDynamicColor
             prefs[KEY_SHOW_DATE_HEADERS] = settings.showDateHeaders
+            prefs[KEY_MARKDOWN_ENABLED] = settings.markdownEnabled
+            prefs[KEY_VOICE_QUALITY] = settings.voiceQuality.name
+            prefs[KEY_IMAGE_QUALITY] = settings.imageQuality.name
+            prefs[KEY_ENCRYPT_MEDIA_CACHE] = settings.encryptMediaCache
         }
         securePrefs.apply {
             authToken = settings.authToken

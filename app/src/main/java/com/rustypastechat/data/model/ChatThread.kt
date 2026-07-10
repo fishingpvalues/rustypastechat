@@ -1,11 +1,6 @@
 package com.rustypastechat.data.model
 
 import androidx.compose.ui.graphics.Color
-import com.rustypastechat.ui.theme.Blue
-import com.rustypastechat.ui.theme.Green
-import com.rustypastechat.ui.theme.Orange
-import com.rustypastechat.ui.theme.Red
-import com.rustypastechat.ui.theme.Teal
 import java.util.UUID
 
 enum class ChatCategory(val label: String, val iconName: String) {

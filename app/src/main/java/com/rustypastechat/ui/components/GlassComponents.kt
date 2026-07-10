@@ -17,18 +17,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.rustypastechat.ui.theme.Blue
+import com.rustypastechat.ui.theme.RustyColors
+import com.rustypastechat.ui.theme.RustyShape
 
-object GlassShape {
-    val Card = RoundedCornerShape(20.dp)
-    val Sheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-    val Dialog = RoundedCornerShape(28.dp)
-    val Button = RoundedCornerShape(14.dp)
-    val Pill = RoundedCornerShape(100.dp)
-    val Small = RoundedCornerShape(10.dp)
-    val Input = RoundedCornerShape(14.dp)
-    val Bubble = RoundedCornerShape(16.dp)
-}
+/** Kept as an alias so existing call sites (`GlassShape.Card`, etc.) don't need a rename;
+ *  the single source of truth for these tokens now lives in `ui/theme/Shape.kt`. */
+typealias GlassShape = RustyShape
 
 @Composable
 fun GlassCard(
@@ -81,7 +75,7 @@ fun GlowCard(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     shape: RoundedCornerShape = GlassShape.Card,
-    glowColor: Color = Blue,
+    glowColor: Color = RustyColors.Rust,
     glowRadius: Float = 0.9f,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
     content: @Composable ColumnScope.() -> Unit

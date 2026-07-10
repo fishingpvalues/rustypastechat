@@ -86,6 +86,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
+    implementation(libs.zxing.core)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.security.crypto)

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Minimalist black-on-white mark: a note/paste square with a folded
+       corner (clipboard/paste cue) fused with a speech-bubble tail (chat cue).
+       Single flat silhouette, no gradients, no color — reads at any size and
+       doubles as an Android 13+ monochrome themed icon. -->
+  <rect x="0" y="0" width="512" height="512" fill="#FFFFFF"/>
+
+  <!-- Tail (chat) -->
+  <path d="M128,344 L128,404 C128,408.5 133.2,410.9 136.6,408.1 L172,376 L128,376 Z" fill="#111111"/>
+
+  <!-- Body (note/paste square), squircle -->
+  <path d="M184,128
+           L320,128
+           L384,192
+           L384,328
+           C384,359.8 358.2,384 328,384
+           L184,384
+           C152.2,384 128,359.8 128,328
+           L128,184
+           C128,152.2 152.2,128 184,128 Z"
+        fill="#111111"/>
+
+  <!-- Folded corner: underside of the flap (subtle depth, still grayscale) -->
+  <path d="M320,128 L384,192 L320,192 Z" fill="#111111" opacity="0.18"/>
+  <!-- Folded corner: crease -->
+  <path d="M320,128 L384,192" stroke="#FFFFFF" stroke-width="5" fill="none"/>
+
+  <!-- Content lines inside the note -->
+  <rect x="168" y="216" width="144" height="16" rx="8" fill="#FFFFFF"/>
+  <rect x="168" y="252" width="104" height="16" rx="8" fill="#FFFFFF" opacity="0.7"/>
+  <rect x="168" y="288" width="72" height="16" rx="8" fill="#FFFFFF" opacity="0.45"/>
+</svg>

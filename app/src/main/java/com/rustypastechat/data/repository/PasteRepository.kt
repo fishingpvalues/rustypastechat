@@ -101,6 +101,16 @@ class PasteRepository @Inject constructor(
         return "$base/$filename"
     }
 
+    private fun mediaTypeForExtension(fileName: String): MediaType? {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "jpg", "jpeg", "png", "gif", "webp", "bmp" -> MediaType.IMAGE
+            "mp4", "webm", "mkv", "mov", "3gp" -> MediaType.VIDEO
+            "m4a", "aac", "mp3", "ogg", "opus", "wav" -> MediaType.AUDIO
+            else -> null
+        }
+    }
+
     suspend fun loadChatHistory(chatId: String = Message.DEFAULT_CHAT): Result<List<Message>> = withContext(Dispatchers.IO) {
         runCatching {
             val pastes = listFiles().getOrThrow()
@@ -168,24 +178,25 @@ class PasteRepository @Inject constructor(
 
     private suspend fun pasteToMessage(paste: PasteItem, settings: AppSettings): Message? {
         val parsed = Message.parseFromFileName(paste.fileName) ?: return null
+        val extensionType = mediaTypeForExtension(paste.fileName)
+        val isMedia = parsed.isMedia || extensionType != null
         val content = getFileContent(paste.fileName).getOrNull() ?: return null
         val text = String(content, Charsets.UTF_8)
 
-        val isMedia = parsed.isMedia || paste.fileName.let { name ->
-            name.substringAfterLast('.', "").lowercase() in listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
-        }
-
         val mediaUrl = if (isMedia) getFileUrl(settings, paste.fileName) else null
         val creationTs = parseCreationTimestamp(paste.creationDateUtc) ?: parsed.timestamp
+        // Any media attachment's downloaded bytes are binary, not UTF-8 text — fall back to
+        // the server filename instead of showing decoded garbage as the caption/name.
+        val displayText = if (isMedia) paste.fileName else text
 
         return Message(
             id = paste.fileName,
-            text = text,
+            text = displayText,
             isOutgoing = parsed.isOutgoing,
             status = MessageStatus.DELIVERED,
             timestamp = creationTs,
             mediaUrl = mediaUrl,
-            mediaType = if (isMedia) MediaType.IMAGE else null,
+            mediaType = if (isMedia) (extensionType ?: MediaType.FILE) else null,
             pasteFileName = paste.fileName,
             isLlmResponse = !parsed.isOutgoing,
             chatId = parsed.chatId

@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.rustypastechat.data.model.MessageStatus
-import com.rustypastechat.ui.theme.Green
+import com.rustypastechat.ui.theme.RustyColors
 
 @Composable
 fun MessageStatusIcon(status: MessageStatus, modifier: Modifier = Modifier) {
@@ -46,7 +46,7 @@ fun MessageStatusIcon(status: MessageStatus, modifier: Modifier = Modifier) {
                 imageVector = Icons.Default.DoneAll,
                 contentDescription = "Read",
                 modifier = modifier,
-                tint = Green
+                tint = RustyColors.Success
             )
         }
         MessageStatus.FAILED -> {

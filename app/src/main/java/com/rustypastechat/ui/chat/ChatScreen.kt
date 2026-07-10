@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forward
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatUnderlined
@@ -72,8 +76,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import com.rustypastechat.ui.animations.shimmerEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,13 +96,11 @@ import androidx.compose.ui.unit.sp
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.ui.chat.components.EmptyChatState
 import com.rustypastechat.ui.chat.components.AnimatedTypingIndicator
-import com.rustypastechat.ui.chat.components.EmptyChatState
 import com.rustypastechat.ui.chat.components.MediaGalleryGrid
 import com.rustypastechat.ui.chat.components.MessageInput
 import com.rustypastechat.ui.chat.components.formatDateHeader
 import com.rustypastechat.ui.chat.components.shouldShowDateHeader
 import com.rustypastechat.ui.chat.components.SwipeableMessageBubble
-import com.rustypastechat.ui.theme.Blue
 import kotlinx.coroutines.launch
 
 private sealed interface ChatListItem {
@@ -106,6 +116,9 @@ fun ChatScreen(
     onTypingChange: (String) -> Unit,
     onSend: () -> Unit,
     onMediaSelected: (android.net.Uri) -> Unit,
+    onStartRecording: () -> Unit = {},
+    onStopRecording: () -> Unit = {},
+    onCancelRecording: () -> Unit = {},
     onReplyTargetSet: (com.rustypastechat.data.model.ReplyTarget?) -> Unit,
     onToggleOneshot: () -> Unit,
     onSetTtl: (Long) -> Unit,
@@ -120,7 +133,11 @@ fun ChatScreen(
     onReplyToMessage: (String) -> Unit,
     onDeleteMessage: (String) -> Unit,
     onForwardMessage: (String) -> Unit,
+    onCancelForward: () -> Unit = {},
+    onForwardTo: (String) -> Unit = {},
     onRetryMessage: (String) -> Unit,
+    onViewOneshot: (String) -> Unit = {},
+    onToggleStar: (String) -> Unit = {},
     onRefresh: () -> Unit,
     getFilteredMessages: () -> List<Message>,
     onNavigateToSettings: () -> Unit,
@@ -155,9 +172,41 @@ fun ChatScreen(
             onDismissRequest = { deleteConfirmId = null },
             title = { Text("Delete message") },
             text = { Text("Remove from chat and paste server?") },
-            confirmButton = { TextButton(onClick = { onDeleteMessage(msgId); deleteConfirmId = null }) { Text("Delete") } },
+            confirmButton = { TextButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onDeleteMessage(msgId); deleteConfirmId = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleteConfirmId = null }) { Text("Cancel") } }
         )
+    }
+
+    if (uiState.forwardTargetMessageId != null) {
+        val sheetState = androidx.compose.material3.rememberModalBottomSheetState()
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = onCancelForward,
+            sheetState = sheetState
+        ) {
+            Text(
+                "Forward to…",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
+            if (uiState.forwardChatOptions.isEmpty()) {
+                Text(
+                    "No other chats yet",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(20.dp)
+                )
+            } else {
+                Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                    uiState.forwardChatOptions.forEach { (id, name) ->
+                        androidx.compose.material3.ListItem(
+                            headlineContent = { Text(name) },
+                            modifier = Modifier.clickable { onForwardTo(id) }
+                        )
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -211,6 +260,9 @@ fun ChatScreen(
                                 selectedIds.forEach { onForwardMessage(it) }; selectedIds = emptySet()
                             }) { Icon(Icons.Default.Forward, "Forward") }
                             IconButton(onClick = {
+                                selectedIds.forEach { onToggleStar(it) }; selectedIds = emptySet()
+                            }) { Icon(Icons.Default.Star, "Star") }
+                            IconButton(onClick = {
                                 selectedIds.forEach { onDeleteMessage(it) }; selectedIds = emptySet()
                             }) { Icon(Icons.Default.Delete, "Delete") }
                         },
@@ -221,7 +273,11 @@ fun ChatScreen(
                     CenterAlignedTopAppBar(
                         title = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("RustyPaste Chat", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "RustyPaste Chat",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.semantics { heading() }
+                                )
                                 AnimatedVisibility(visible = uiState.isLlmTyping) {
                                     Text("AI typing...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -246,12 +302,12 @@ fun ChatScreen(
                                     )
                                     DropdownMenuItem(
                                         text = { Text("View once mode") }, onClick = { onToggleOneshot(); overflowMenuExpanded = false },
-                                        leadingIcon = { Icon(Icons.Default.Whatshot, null, tint = if (uiState.isOneshotMode) Blue else MaterialTheme.colorScheme.onSurfaceVariant) }
+                                        leadingIcon = { Icon(Icons.Default.Whatshot, null, tint = if (uiState.isOneshotMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                                     )
                                     DropdownMenuItem(
                                         text = { Text(if (uiState.messageTtlSeconds > 0) "Expiry: ${formatTtl(uiState.messageTtlSeconds)}" else "Message expiry") },
                                         onClick = { onSetTtl(when (uiState.messageTtlSeconds) { 0L -> 300L; 300L -> 3600L; 3600L -> 86400L; else -> 0L }); overflowMenuExpanded = false },
-                                        leadingIcon = { Icon(Icons.Default.Timer, null, tint = if (uiState.messageTtlSeconds > 0) Blue else MaterialTheme.colorScheme.onSurfaceVariant) }
+                                        leadingIcon = { Icon(Icons.Default.Timer, null, tint = if (uiState.messageTtlSeconds > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("Settings") }, onClick = { onNavigateToSettings(); overflowMenuExpanded = false },
@@ -293,9 +349,9 @@ fun ChatScreen(
                                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Edit, null, tint = Blue, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Edit, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Editing message", style = MaterialTheme.typography.labelSmall, color = Blue, fontWeight = FontWeight.SemiBold)
+                                Text("Editing message", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.weight(1f))
                                 TextButton(onClick = onCancelEditing) { Text("Cancel") }
                                 FilledTonalButton(onClick = onSaveEdit) {
@@ -314,10 +370,10 @@ fun ChatScreen(
                         uiState.replyTarget?.let { reply ->
                             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                 .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Reply, null, tint = Blue, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Reply, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(if (reply.isOutgoing) "Replying to yourself" else "Replying", style = MaterialTheme.typography.labelSmall, color = Blue, fontWeight = FontWeight.SemiBold)
+                                    Text(if (reply.isOutgoing) "Replying to yourself" else "Replying", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                                     Text(reply.text, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 TextButton(onClick = { onReplyTargetSet(null) }) { Text("Cancel") }
@@ -337,8 +393,13 @@ fun ChatScreen(
                         MessageInput(
                             value = uiState.typingMessage,
                             onValueChange = onTypingChange,
-                            onSend = onSend,
+                            onSend = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onSend() },
                             onMediaSelected = onMediaSelected,
+                            isRecording = uiState.isRecordingVoice,
+                            recordingElapsedMs = uiState.recordingElapsedMs,
+                            onStartRecording = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onStartRecording() },
+                            onStopRecording = onStopRecording,
+                            onCancelRecording = onCancelRecording,
                             enabled = uiState.isConnected
                         )
                     }
@@ -349,12 +410,7 @@ fun ChatScreen(
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(innerPadding)) {
             when {
                 uiState.isLoading && !uiState.historyLoaded -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(); Spacer(Modifier.height(8.dp))
-                            Text("Loading chat...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    MessageListSkeleton()
                 }
                 displayMessages.isEmpty() -> {
                     PullToRefreshBox(isRefreshing = uiState.isRefreshing, onRefresh = onRefresh) {
@@ -366,6 +422,24 @@ fun ChatScreen(
                     }
                 }
                 else -> {
+                    // Announce newly-arrived incoming messages to TalkBack: message content
+                    // otherwise only reaches screen readers if the user manually navigates to it.
+                    var announcement by remember { mutableStateOf("") }
+                    LaunchedEffect(displayMessages.lastOrNull()?.id) {
+                        val last = displayMessages.lastOrNull()
+                        if (last != null && !last.isOutgoing) {
+                            announcement = "New message: ${last.text.ifBlank { "media" }}"
+                        }
+                    }
+                    Text(
+                        announcement,
+                        modifier = Modifier
+                            .size(1.dp)
+                            .semantics {
+                                liveRegion = LiveRegionMode.Polite
+                                contentDescription = announcement
+                            }
+                    )
                     PullToRefreshBox(isRefreshing = uiState.isRefreshing, onRefresh = onRefresh) {
                         val chatItems = remember(displayMessages, uiState.settings.showDateHeaders) {
                             buildList {
@@ -444,12 +518,18 @@ fun ChatScreen(
                                         } else {
                                             SwipeableMessageBubble(
                                                 message = item.msg, isSelected = item.msg.id in selectedIds,
+                                                isOneshotViewed = item.msg.id in uiState.viewedOneshotIds,
+                                                isStarred = item.msg.id in uiState.starredIds,
+                                                markdownEnabled = uiState.settings.markdownEnabled,
                                                 onRetry = onRetryMessage,
                                                 onDelete = { deleteConfirmId = it },
                                                 onCopy = onCopyMessage,
                                                 onReply = onReplyToMessage,
                                                 onForward = onForwardMessage,
+                                                onViewOneshot = onViewOneshot,
+                                                onToggleStar = onToggleStar,
                                                 onLongPress = { id ->
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
                                                 }
                                             )
@@ -468,6 +548,34 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageListSkeleton() {
+    val base = MaterialTheme.colorScheme.surfaceContainerHigh
+    val highlight = MaterialTheme.colorScheme.onSurface
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.Bottom
+    ) {
+        listOf(false, true, true, false, true).forEach { outgoing ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                contentAlignment = if (outgoing) Alignment.CenterEnd else Alignment.CenterStart
+            ) {
+                Box(
+                    Modifier
+                        .widthIn(min = 80.dp, max = 200.dp)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(base)
+                        .shimmerEffect(base, highlight)
+                )
             }
         }
     }

@@ -20,6 +20,8 @@ import com.rustypastechat.ui.common.OneTimeEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +48,13 @@ data class ChatUiState(
     val searchQuery: String = "",
     val isSearchMode: Boolean = false,
     val editingMessageId: String? = null,
-    val editingMessageText: String = ""
+    val editingMessageText: String = "",
+    val isRecordingVoice: Boolean = false,
+    val recordingElapsedMs: Long = 0L,
+    val viewedOneshotIds: Set<String> = emptySet(),
+    val starredIds: Set<String> = emptySet(),
+    val forwardTargetMessageId: String? = null,
+    val forwardChatOptions: List<Pair<String, String>> = emptyList()
 )
 
 @HiltViewModel
@@ -56,6 +64,7 @@ class ChatViewModel @Inject constructor(
     private val pasteRepository: PasteRepository,
     private val llmRepository: LlmRepository,
     private val imageProcessor: ImageProcessor,
+    private val voiceRecorder: VoiceRecorder,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
@@ -64,8 +73,13 @@ class ChatViewModel @Inject constructor(
 
     private var currentChatId: String = Message.DEFAULT_CHAT
     private var previousServerUrl: String? = null
+    private var draftSaveJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            val starred = preferencesManager.starredIdsFlow.first()
+            _uiState.update { it.copy(starredIds = starred) }
+        }
         viewModelScope.launch {
             preferencesManager.settingsFlow.collect { settings ->
                 val wasDisconnected = previousServerUrl != settings.pasteServerUrl
@@ -81,9 +95,19 @@ class ChatViewModel @Inject constructor(
 
     fun setChatId(chatId: String) {
         if (currentChatId != chatId) {
+            val previousChatId = currentChatId
+            val draftToFlush = _uiState.value.typingMessage
             currentChatId = chatId
-            _uiState.update { it.copy(historyLoaded = false, messages = emptyList()) }
+            draftSaveJob?.cancel()
+            _uiState.update { it.copy(historyLoaded = false, messages = emptyList(), typingMessage = "") }
             loadChatHistory()
+            viewModelScope.launch {
+                preferencesManager.saveDraft(previousChatId, draftToFlush)
+                val draft = preferencesManager.getDraft(chatId)
+                if (draft.isNotEmpty() && currentChatId == chatId) {
+                    _uiState.update { it.copy(typingMessage = draft) }
+                }
+            }
         }
     }
 
@@ -107,6 +131,12 @@ class ChatViewModel @Inject constructor(
 
     fun updateTypingMessage(text: String) {
         _uiState.update { it.copy(typingMessage = text) }
+        val chatId = currentChatId
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(500)
+            preferencesManager.saveDraft(chatId, text)
+        }
     }
 
     fun setReplyTarget(target: ReplyTarget?) {
@@ -185,9 +215,18 @@ class ChatViewModel @Inject constructor(
         return all.filter { it.text.lowercase().contains(query) }
     }
 
+    /** Toggles the marker pair around the whole draft (no rich-text field means no selection
+     *  to wrap, so this wraps/unwraps the entire message rather than a text range). */
     fun insertFormatting(marker: String) {
         val text = _uiState.value.typingMessage
-        _uiState.update { it.copy(typingMessage = text + marker) }
+        val alreadyWrapped = text.length >= marker.length * 2 &&
+            text.startsWith(marker) && text.endsWith(marker)
+        val updated = if (alreadyWrapped) {
+            text.removePrefix(marker).removeSuffix(marker)
+        } else {
+            "$marker$text$marker"
+        }
+        _uiState.update { it.copy(typingMessage = updated) }
     }
 
     fun sendTextMessage() {
@@ -213,6 +252,8 @@ class ChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(messages = it.messages + msg, typingMessage = "", replyTarget = null, isOneshotMode = false)
         }
+        draftSaveJob?.cancel()
+        viewModelScope.launch { preferencesManager.saveDraft(currentChatId, "") }
 
         viewModelScope.launch {
             val result = if (isOneshot) {
@@ -241,7 +282,11 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun sendMediaMessage(filePath: String, fileNameOriginal: String) {
+    fun sendMediaMessage(
+        filePath: String,
+        fileNameOriginal: String,
+        mediaType: com.rustypastechat.data.model.MediaType = com.rustypastechat.data.model.MediaType.IMAGE
+    ) {
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val ext = fileNameOriginal.substringAfterLast('.', "jpg")
@@ -251,7 +296,7 @@ class ChatViewModel @Inject constructor(
         val msg = Message(
             id = messageId, text = fileNameOriginal, isOutgoing = true,
             status = MessageStatus.SENDING, timestamp = now,
-            mediaUrl = filePath, mediaType = com.rustypastechat.data.model.MediaType.IMAGE,
+            mediaUrl = filePath, mediaType = mediaType,
             pasteFileName = fileName,
             replyToId = reply?.messageId, replyToText = reply?.text, replyToIsOutgoing = reply?.isOutgoing
         )
@@ -280,10 +325,49 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /** Entry point for anything picked via the generic attach button — routes images through
+     *  compression, copies video/other files to cache as-is, and tags the correct [MediaType]. */
+    fun sendPickedMedia(uri: Uri) {
+        val mime = appContext.contentResolver.getType(uri)
+            ?: uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase()?.let { ext ->
+                android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+            } ?: ""
+        when {
+            mime.startsWith("image/") -> compressAndSendMedia(uri)
+            mime.startsWith("video/") -> copyAndSendRawMedia(uri, com.rustypastechat.data.model.MediaType.VIDEO)
+            else -> copyAndSendRawMedia(uri, com.rustypastechat.data.model.MediaType.FILE)
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        return appContext.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) cursor.getString(nameIndex) else null
+        }
+    }
+
+    private fun copyAndSendRawMedia(uri: Uri, mediaType: com.rustypastechat.data.model.MediaType) {
+        viewModelScope.launch(ioDispatcher) {
+            val originalName = queryDisplayName(uri) ?: uri.lastPathSegment ?: "file"
+            val ext = originalName.substringAfterLast('.', if (mediaType == com.rustypastechat.data.model.MediaType.VIDEO) "mp4" else "bin")
+            val tempFile = java.io.File(appContext.cacheDir, "upload_${System.currentTimeMillis()}.$ext")
+            runCatching {
+                appContext.contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw java.io.IOException("Could not open file")
+            }.onSuccess {
+                sendMediaMessage(tempFile.absolutePath, originalName, mediaType)
+            }.onFailure { e ->
+                _uiState.update { it.copy(error = OneTimeEvent("Attachment error: ${e.message}")) }
+            }
+        }
+    }
+
     fun compressAndSendMedia(uri: Uri) {
         viewModelScope.launch(ioDispatcher) {
             val tempFile = java.io.File(appContext.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
-            imageProcessor.compressImage(uri, tempFile)
+            val quality = _uiState.value.settings.imageQuality
+            imageProcessor.compressImage(uri, tempFile, quality.maxDimension, quality.jpegQuality)
                 .onSuccess { compressed ->
                     sendMediaMessage(compressed.absolutePath, uri.lastPathSegment ?: "image.jpg")
                 }
@@ -291,6 +375,59 @@ class ChatViewModel @Inject constructor(
                     _uiState.update { it.copy(error = OneTimeEvent("Image error: ${e.message}")) }
                 }
         }
+    }
+
+    private var recordingJob: Job? = null
+
+    fun startRecordingVoice() {
+        if (_uiState.value.isRecordingVoice) return
+        voiceRecorder.start(_uiState.value.settings.voiceQuality)
+            .onSuccess {
+                _uiState.update { it.copy(isRecordingVoice = true, recordingElapsedMs = 0L) }
+                val startedAt = System.currentTimeMillis()
+                recordingJob = viewModelScope.launch {
+                    while (true) {
+                        delay(100)
+                        _uiState.update { it.copy(recordingElapsedMs = System.currentTimeMillis() - startedAt) }
+                    }
+                }
+            }
+            .onFailure { e ->
+                _uiState.update { it.copy(error = OneTimeEvent("Could not start recording: ${e.message}")) }
+            }
+    }
+
+    fun stopRecordingAndSendVoice() {
+        recordingJob?.cancel()
+        recordingJob = null
+        val recorded = voiceRecorder.stop()
+        _uiState.update { it.copy(isRecordingVoice = false, recordingElapsedMs = 0L) }
+        if (recorded != null) {
+            val (file, _) = recorded
+            sendMediaMessage(file.absolutePath, "Voice message", com.rustypastechat.data.model.MediaType.AUDIO)
+        }
+    }
+
+    fun cancelRecordingVoice() {
+        recordingJob?.cancel()
+        recordingJob = null
+        voiceRecorder.cancel()
+        _uiState.update { it.copy(isRecordingVoice = false, recordingElapsedMs = 0L) }
+    }
+
+    /** WhatsApp/Signal-style burn-after-reading: the bubble hides content until this is called,
+     *  then hides it again permanently — this only gates local rendering (once-only server
+     *  delivery is already enforced by the paste server's own oneshot semantics). */
+    fun markOneshotViewed(messageId: String) {
+        _uiState.update { it.copy(viewedOneshotIds = it.viewedOneshotIds + messageId) }
+    }
+
+    fun toggleStarred(messageId: String) {
+        _uiState.update { state ->
+            val starred = state.starredIds
+            state.copy(starredIds = if (messageId in starred) starred - messageId else starred + messageId)
+        }
+        viewModelScope.launch { preferencesManager.saveStarredIds(_uiState.value.starredIds) }
     }
 
     fun copyMessage(messageId: String) {
@@ -316,9 +453,55 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /** Opens the chat-picker for a real forward (re-uploads the message under the target
+     *  chat's file prefix) instead of the old fake "copy text into my own composer" behavior. */
     fun forwardMessage(messageId: String) {
-        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
-        _uiState.update { it.copy(typingMessage = msg.text) }
+        _uiState.update { it.copy(forwardTargetMessageId = messageId) }
+        viewModelScope.launch {
+            val messages = pasteRepository.loadChatHistory(Message.DEFAULT_CHAT).getOrNull() ?: emptyList()
+            val options = messages.map { it.chatId }.distinct()
+                .filter { it != currentChatId }
+                .map { id -> id to (if (id == Message.DEFAULT_CHAT) "General" else "Chat $id") }
+            _uiState.update { it.copy(forwardChatOptions = options) }
+        }
+    }
+
+    fun cancelForward() {
+        _uiState.update { it.copy(forwardTargetMessageId = null, forwardChatOptions = emptyList()) }
+    }
+
+    fun forwardTo(targetChatId: String) {
+        val messageId = _uiState.value.forwardTargetMessageId ?: return
+        val msg = _uiState.value.messages.find { it.id == messageId }
+        _uiState.update { it.copy(forwardTargetMessageId = null, forwardChatOptions = emptyList()) }
+        if (msg == null) return
+
+        viewModelScope.launch(ioDispatcher) {
+            val newId = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            val forwarded = if (msg.mediaUrl != null && msg.mediaType != null && msg.pasteFileName != null) {
+                val ext = msg.pasteFileName.substringAfterLast('.', "bin")
+                val newFileName = Message.buildMediaFileName(targetChatId, now, newId, ext)
+                pasteRepository.getFileContent(msg.pasteFileName).mapCatching { bytes ->
+                    val tempFile = java.io.File(appContext.cacheDir, "forward_$now.$ext")
+                    tempFile.writeBytes(bytes)
+                    val result = pasteRepository.uploadFile(tempFile.absolutePath, newFileName)
+                    tempFile.delete()
+                    result.getOrThrow()
+                }
+            } else if (msg.text.isNotBlank()) {
+                val newFileName = Message.buildFileName(targetChatId, now, true, newId)
+                pasteRepository.uploadText(msg.text, newFileName)
+            } else {
+                Result.failure(IllegalStateException("Nothing to forward"))
+            }
+            val targetName = if (targetChatId == Message.DEFAULT_CHAT) "General" else "Chat $targetChatId"
+            forwarded.onSuccess {
+                _uiState.update { it.copy(error = OneTimeEvent("Forwarded to $targetName")) }
+            }.onFailure { e ->
+                _uiState.update { it.copy(error = OneTimeEvent("Forward failed: ${e.message}")) }
+            }
+        }
     }
 
     fun retryMessage(messageId: String) {
@@ -331,7 +514,7 @@ class ChatViewModel @Inject constructor(
         }
 
         if (msg.mediaUrl != null && msg.mediaType != null) {
-            sendMediaMessage(msg.mediaUrl, msg.pasteFileName ?: "file.jpg")
+            sendMediaMessage(msg.mediaUrl, msg.text.ifBlank { msg.pasteFileName ?: "file" }, msg.mediaType)
         } else {
             viewModelScope.launch {
                 val now = System.currentTimeMillis()
@@ -430,5 +613,12 @@ class ChatViewModel @Inject constructor(
         }
         messages.add(LlmMessage("user", currentText))
         return messages
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // voiceRecorder is a Hilt singleton, independent of this ViewModel's lifecycle —
+        // navigating away mid-recording must not leave the mic held open indefinitely.
+        if (_uiState.value.isRecordingVoice) voiceRecorder.cancel()
     }
 }

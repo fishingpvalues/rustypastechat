@@ -135,6 +135,21 @@ fun Modifier.shimmerEffect(
 }
 
 @Composable
+fun rememberRotationAnim(durationMs: Int = 6000): Float {
+    val infiniteTransition = rememberInfiniteTransition(label = "rotation")
+    val angle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotationAngle"
+    )
+    return angle
+}
+
+@Composable
 fun rememberPulseAnim(
     minScale: Float = 0.97f,
     maxScale: Float = 1.03f,

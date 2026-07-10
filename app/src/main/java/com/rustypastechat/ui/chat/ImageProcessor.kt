@@ -24,7 +24,12 @@ class ImageProcessor @Inject constructor(
         const val JPEG_QUALITY = 85
     }
 
-    fun compressImage(inputUri: Uri, outputFile: File): Result<File> {
+    fun compressImage(
+        inputUri: Uri,
+        outputFile: File,
+        maxDimension: Int = MAX_DIMENSION,
+        jpegQuality: Int = JPEG_QUALITY
+    ): Result<File> {
         return try {
             val inputStream = context.contentResolver.openInputStream(inputUri)
                 ?: return Result.failure(Exception("Cannot open image"))
@@ -33,14 +38,14 @@ class ImageProcessor @Inject constructor(
             BitmapFactory.decodeStream(inputStream, null, options)
             inputStream.close()
 
-            var bitmap = loadScaledBitmap(inputUri, options)
+            var bitmap = loadScaledBitmap(inputUri, options, maxDimension)
             bitmap = fixOrientation(inputUri, bitmap)
 
             val outputStream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, outputStream)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, jpegQuality, outputStream)
 
             var bytes = outputStream.toByteArray()
-            var quality = JPEG_QUALITY
+            var quality = jpegQuality
             while (bytes.size > MAX_FILE_SIZE_BYTES && quality > 30) {
                 quality -= 10
                 outputStream.reset()
@@ -50,15 +55,7 @@ class ImageProcessor @Inject constructor(
 
             if (!outputFile.parentFile?.exists()!!) outputFile.parentFile!!.mkdirs()
             FileOutputStream(outputFile).use { it.write(bytes) }
-
-            if (bitmap.width > MAX_DIMENSION || bitmap.height > MAX_DIMENSION) {
-                bitmap.recycle()
-                loadScaledBitmap(Uri.fromFile(outputFile), BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }).let { /* just to trigger rescale */ }
-            } else {
-                bitmap.recycle()
-            }
+            bitmap.recycle()
 
             Result.success(outputFile)
         } catch (e: Exception) {
@@ -66,11 +63,11 @@ class ImageProcessor @Inject constructor(
         }
     }
 
-    private fun loadScaledBitmap(uri: Uri, options: BitmapFactory.Options): Bitmap {
+    private fun loadScaledBitmap(uri: Uri, options: BitmapFactory.Options, maxDimension: Int = MAX_DIMENSION): Bitmap {
         val input = context.contentResolver.openInputStream(uri)!!
-        val scaleFactor = if (options.outWidth > MAX_DIMENSION || options.outHeight > MAX_DIMENSION) {
-            val widthRatio = options.outWidth.toFloat() / MAX_DIMENSION
-            val heightRatio = options.outHeight.toFloat() / MAX_DIMENSION
+        val scaleFactor = if (options.outWidth > maxDimension || options.outHeight > maxDimension) {
+            val widthRatio = options.outWidth.toFloat() / maxDimension
+            val heightRatio = options.outHeight.toFloat() / maxDimension
             maxOf(widthRatio, heightRatio).roundToInt().coerceAtLeast(1)
         } else 1
         val opts = BitmapFactory.Options().apply { inSampleSize = scaleFactor }

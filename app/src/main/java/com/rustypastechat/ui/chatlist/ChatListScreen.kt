@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.rustypastechat.ui.animations.rememberFadeInScaleAnim
+import com.rustypastechat.ui.animations.shimmerEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
@@ -38,7 +41,6 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +69,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -77,8 +81,8 @@ import com.rustypastechat.data.model.ChatCategory
 import com.rustypastechat.data.model.ChatThread
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.ui.components.GlassCard
+import com.rustypastechat.ui.components.RustyMark
 import com.rustypastechat.ui.components.GlassShape
-import com.rustypastechat.ui.theme.Blue
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -137,7 +141,12 @@ fun ChatListScreen(
             } else {
                 TopAppBar(
                     title = {
-                        Text("Chats", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Chats",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.semantics { heading() }
+                        )
                     },
                     actions = {
                         IconButton(onClick = { onSearchQueryChanged("") }) {
@@ -206,13 +215,7 @@ fun ChatListScreen(
             // Content
             when {
                 state.isLoading && state.chats.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(8.dp))
-                            Text("Loading...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    ChatListSkeleton()
                 }
                 state.isSearching -> {
                     if (state.searchResults.isEmpty()) {
@@ -230,7 +233,11 @@ fun ChatListScreen(
                 state.chats.isEmpty() && !state.isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("\uD83D\uDCAC", style = MaterialTheme.typography.displayLarge)
+                            RustyMark(
+                                modifier = Modifier.size(56.dp),
+                                markColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                contentColor = MaterialTheme.colorScheme.background
+                            )
                             Spacer(Modifier.height(8.dp))
                             Text("No chats yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                             Spacer(Modifier.height(4.dp))
@@ -293,6 +300,65 @@ fun ChatListScreen(
 }
 
 @Composable
+private fun Avatar(chat: ChatThread, size: androidx.compose.ui.unit.Dp, textStyle: androidx.compose.ui.text.TextStyle) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(chat.avatarColorCompose),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            chat.name.take(1).uppercase(),
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            style = textStyle
+        )
+    }
+}
+
+@Composable
+private fun ChatListSkeleton() {
+    val base = MaterialTheme.colorScheme.surfaceContainerHigh
+    val highlight = MaterialTheme.colorScheme.onSurface
+    Column(Modifier.fillMaxSize().padding(top = 4.dp)) {
+        repeat(6) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(base)
+                        .shimmerEffect(base, highlight)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(14.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(base)
+                            .shimmerEffect(base, highlight)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth(0.8f)
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(base)
+                            .shimmerEffect(base, highlight)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ChatListItem(chat: ChatThread, onClick: () -> Unit, onLongClick: () -> Unit) {
     val timeText = remember(chat.lastTimestamp) {
         if (chat.lastTimestamp == 0L) ""
@@ -305,12 +371,19 @@ private fun ChatListItem(chat: ChatThread, onClick: () -> Unit, onLongClick: () 
         }
     }
 
+    val entryAnim = rememberFadeInScaleAnim(initialScale = 0.94f, targetScale = 1f)
     GlassCard(
         onClick = onClick,
         shape = GlassShape.Small,
         containerColor = MaterialTheme.colorScheme.surface,
         borderAlpha = 0.04f,
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .graphicsLayer {
+                scaleX = entryAnim.value
+                scaleY = entryAnim.value
+                alpha = entryAnim.value
+            }
     ) {
         Row(
             Modifier
@@ -319,17 +392,7 @@ private fun ChatListItem(chat: ChatThread, onClick: () -> Unit, onLongClick: () 
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                Modifier.size(48.dp).clip(CircleShape).background(chat.avatarColorCompose),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    chat.name.take(1).uppercase(),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
+            Avatar(chat = chat, size = 48.dp, textStyle = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -448,9 +511,7 @@ private fun ChatDetailDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(chat.avatarColorCompose), contentAlignment = Alignment.Center) {
-                    Text(chat.name.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                }
+                Avatar(chat = chat, size = 36.dp, textStyle = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.width(12.dp))
                 Text(chat.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
@@ -530,12 +591,19 @@ private fun ChatDetailDialog(
 
 @Composable
 private fun SearchResultItem(msg: Message, onClick: () -> Unit) {
+    val entryAnim = rememberFadeInScaleAnim(initialScale = 0.94f, targetScale = 1f)
     GlassCard(
         onClick = onClick,
         shape = GlassShape.Small,
         containerColor = MaterialTheme.colorScheme.surface,
         borderAlpha = 0.04f,
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .graphicsLayer {
+                scaleX = entryAnim.value
+                scaleY = entryAnim.value
+                alpha = entryAnim.value
+            }
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(msg.text.take(120), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)

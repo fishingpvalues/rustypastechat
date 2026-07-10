@@ -1,6 +1,9 @@
 package com.rustypastechat.ui.navigation
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.Settings
@@ -11,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
@@ -55,23 +59,41 @@ fun NavGraph() {
         AnimatedNavItem(Settings, "Settings", Icons.Rounded.Settings, Icons.Outlined.Settings),
     )
 
-    val showBottomNav = !navigationState.isDeepInStack
+    val showNav = !navigationState.isDeepInStack
+    val isWideScreen = LocalConfiguration.current.screenWidthDp >= 600
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomNav) {
-                AnimatedBottomNavBar(
+    if (isWideScreen) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (showNav) {
+                NavigationRailBar(
                     items = navBarItems,
                     currentRoute = currentTopLevelRoute,
                     onNavigate = { route -> navigator.navigate(route) }
                 )
             }
+            NavDisplay(
+                entries = navigationState.toEntries(entryProvider),
+                onBack = { navigator.goBack() },
+                modifier = Modifier.weight(1f)
+            )
         }
-    ) { innerPadding ->
-        NavDisplay(
-            entries = navigationState.toEntries(entryProvider),
-            onBack = { navigator.goBack() },
-            modifier = Modifier.padding(innerPadding)
-        )
+    } else {
+        Scaffold(
+            bottomBar = {
+                if (showNav) {
+                    AnimatedBottomNavBar(
+                        items = navBarItems,
+                        currentRoute = currentTopLevelRoute,
+                        onNavigate = { route -> navigator.navigate(route) }
+                    )
+                }
+            }
+        ) { innerPadding ->
+            NavDisplay(
+                entries = navigationState.toEntries(entryProvider),
+                onBack = { navigator.goBack() },
+                modifier = Modifier.padding(innerPadding)
+            )
+        }
     }
 }

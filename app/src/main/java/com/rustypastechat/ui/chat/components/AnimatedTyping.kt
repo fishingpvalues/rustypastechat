@@ -24,7 +24,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rustypastechat.ui.animations.MelanoEasing
-import com.rustypastechat.ui.theme.Blue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,6 +38,7 @@ fun AnimatedTypingIndicator(modifier: Modifier = Modifier) {
         Text("AI is typing", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(4.dp))
+        val dotColor = MaterialTheme.colorScheme.primary
         repeat(3) { i ->
             val infinite = rememberInfiniteTransition(label = "dot$i")
             val offset by infinite.animateFloat(
@@ -52,7 +52,7 @@ fun AnimatedTypingIndicator(modifier: Modifier = Modifier) {
                 .size(5.dp)
                 .offset(y = offset.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Blue.copy(alpha = 0.6f))
+                .background(dotColor.copy(alpha = 0.6f))
             )
             if (i < 2) Spacer(Modifier.width(2.dp))
         }

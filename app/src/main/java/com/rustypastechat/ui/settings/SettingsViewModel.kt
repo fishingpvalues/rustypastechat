@@ -107,6 +107,22 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(settings = it.settings.copy(showDateHeaders = show)) }
     }
 
+    fun updateMarkdownEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(markdownEnabled = enabled)) }
+    }
+
+    fun updateVoiceQuality(quality: com.rustypastechat.data.model.VoiceQuality) {
+        _uiState.update { it.copy(settings = it.settings.copy(voiceQuality = quality)) }
+    }
+
+    fun updateImageQuality(quality: com.rustypastechat.data.model.ImageQuality) {
+        _uiState.update { it.copy(settings = it.settings.copy(imageQuality = quality)) }
+    }
+
+    fun updateEncryptMediaCache(enabled: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(encryptMediaCache = enabled)) }
+    }
+
     fun saveSettings() {
         viewModelScope.launch {
             preferencesManager.saveSettings(_uiState.value.settings)
