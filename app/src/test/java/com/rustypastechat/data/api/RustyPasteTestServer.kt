@@ -18,32 +18,52 @@ class RustyPasteTestServer(
 
         fun binaryPath(): String {
             if (cachedPath != null) return cachedPath!!
-            val paths = listOf(
-                "src/test/resources/rustypaste",
-                "../app/src/test/resources/rustypaste",
-                "app/src/test/resources/rustypaste"
-            )
-            for (p in paths) {
-                val f = File(System.getProperty("user.dir"), p)
-                if (f.exists() && f.canExecute()) {
-                    cachedPath = f.absolutePath
-                    return f.absolutePath
-                }
-            }
-            // fallback: try to find via PATH
-            val which = runCatching {
+            val candidates = mutableListOf<String>()
+            // Prefer a PATH-resolved binary first — it's guaranteed to match this
+            // host's OS/arch, unlike a bundled test-resource binary that may have
+            // been built for a different platform (e.g. Linux CI vs. macOS dev).
+            runCatching {
                 ProcessBuilder("which", "rustypaste")
                     .redirectErrorStream(true)
                     .start()
                     .inputStream.bufferedReader().readLine()
-            }.getOrNull()
-            if (which != null) {
-                cachedPath = which
-                return which
+            }.getOrNull()?.let { candidates.add(it) }
+            candidates.addAll(
+                listOf(
+                    "src/test/resources/rustypaste",
+                    "../app/src/test/resources/rustypaste",
+                    "app/src/test/resources/rustypaste"
+                ).map { File(System.getProperty("user.dir"), it).absolutePath }
+            )
+            for (p in candidates) {
+                val f = File(p)
+                if (f.exists() && f.canExecute() && isExecutableForPlatform(p)) {
+                    cachedPath = p
+                    return p
+                }
             }
             throw IllegalStateException(
-                "rustypaste binary not found. Build with: cd /tmp/rustypaste && cargo build --release"
+                "No rustypaste binary compatible with ${System.getProperty("os.name")}/" +
+                    "${System.getProperty("os.arch")} was found on PATH or in test resources. " +
+                    "Install one with: cargo install rustypaste"
             )
+        }
+
+        /** Runs [path] briefly and confirms the OS could actually exec it (vs. e.g. a foreign-arch ELF/PE). */
+        private fun isExecutableForPlatform(path: String): Boolean {
+            return try {
+                val proc = ProcessBuilder(path).redirectErrorStream(true).start()
+                val output = StringBuilder()
+                val reader = proc.inputStream.bufferedReader()
+                val finished = proc.waitFor(3, TimeUnit.SECONDS)
+                while (reader.ready()) {
+                    output.append(reader.readLine() ?: break).append('\n')
+                }
+                if (!finished) proc.destroyForcibly()
+                output.isNotEmpty()
+            } catch (e: Exception) {
+                false
+            }
         }
 
         private fun findFreePort(): Int {

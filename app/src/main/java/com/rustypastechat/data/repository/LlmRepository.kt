@@ -17,13 +17,18 @@ class LlmRepository @Inject constructor(
     private val apiClientFactory: ApiClientFactory
 ) {
     private var api: com.rustypastechat.data.api.OpenAiApi? = null
+    private var apiBaseUrl: String? = null
 
     private suspend fun getSettings() = preferencesManager.settingsFlow.first()
 
     private suspend fun getApi(): com.rustypastechat.data.api.OpenAiApi {
         val settings = getSettings()
-        if (api == null) {
+        if (settings.llmEndpoint.isBlank()) {
+            throw IllegalStateException("LLM endpoint is not configured. Set one in Settings.")
+        }
+        if (api == null || apiBaseUrl != settings.llmEndpoint) {
             api = apiClientFactory.createOpenAiApi(settings.llmEndpoint)
+            apiBaseUrl = settings.llmEndpoint
         }
         return api!!
     }

@@ -31,11 +31,16 @@ class PasteRepository @Inject constructor(
     private val apiClientFactory: ApiClientFactory
 ) {
     private var api: com.rustypastechat.data.api.RustyPasteApi? = null
+    private var apiBaseUrl: String? = null
 
     private suspend fun getApi(): com.rustypastechat.data.api.RustyPasteApi {
         val settings = preferencesManager.settingsFlow.first()
-        if (api == null) {
+        if (settings.pasteServerUrl.isBlank()) {
+            throw IllegalStateException("Paste server is not configured. Set a server URL in Settings.")
+        }
+        if (api == null || apiBaseUrl != settings.pasteServerUrl) {
             api = apiClientFactory.createPasteApi(settings.pasteServerUrl)
+            apiBaseUrl = settings.pasteServerUrl
         }
         return api!!
     }
@@ -111,7 +116,10 @@ class PasteRepository @Inject constructor(
         }
     }
 
-    suspend fun loadChatHistory(chatId: String = Message.DEFAULT_CHAT): Result<List<Message>> = withContext(Dispatchers.IO) {
+    /** Reconstructs every message on the server, across every chat. Used by the chat list
+     *  overview, which needs to see all chats at once — for a single chat's messages, use
+     *  [loadChatHistory] instead. */
+    suspend fun loadAllMessages(): Result<List<Message>> = withContext(Dispatchers.IO) {
         runCatching {
             val pastes = listFiles().getOrThrow()
             val settings = preferencesManager.settingsFlow.first()
@@ -122,7 +130,6 @@ class PasteRepository @Inject constructor(
             val chatContentSet = mutableSetOf<String>()
 
             val chatOnlyPastes = chatPastes.sortedBy { it.creationDateUtc ?: "" }
-
             val chatMessages = coroutineScope {
                 chatOnlyPastes.map { paste ->
                     async { pasteToMessage(paste, settings) }
@@ -141,6 +148,11 @@ class PasteRepository @Inject constructor(
             (chatMessages + importedMessages).sortedBy { it.timestamp }
         }
     }
+
+    /** Reconstructs messages for a single chat. Legacy/imported pastes predate multi-chat
+     *  support and have no chat id of their own, so they only ever belong to the default chat. */
+    suspend fun loadChatHistory(chatId: String = Message.DEFAULT_CHAT): Result<List<Message>> =
+        loadAllMessages().map { all -> all.filter { it.chatId == chatId } }
 
     private suspend fun pasteToImportedMessage(
         paste: PasteItem,
@@ -205,16 +217,24 @@ class PasteRepository @Inject constructor(
 
     private fun parseCreationTimestamp(dateStr: String?): Long? {
         if (dateStr.isNullOrBlank()) return null
-        return try {
-            val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-            fmt.timeZone = TimeZone.getTimeZone("UTC")
-            fmt.parse(dateStr)?.time
-        } catch (_: Exception) {
+        // rustypaste's actual API returns space-separated dates ("2026-07-12 12:50:26"),
+        // not ISO 'T'-separated ones — try that format first since it's what real
+        // servers send; the ISO variants are kept as a fallback for other server versions.
+        val patterns = listOf(
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        )
+        for (pattern in patterns) {
             try {
-                val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
+                val fmt = SimpleDateFormat(pattern, Locale.US)
                 fmt.timeZone = TimeZone.getTimeZone("UTC")
-                fmt.parse(dateStr)?.time
-            } catch (_: Exception) { null }
+                fmt.isLenient = false
+                fmt.parse(dateStr)?.time?.let { return it }
+            } catch (_: Exception) {
+                // try the next pattern
+            }
         }
+        return null
     }
 }

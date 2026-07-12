@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This app talks to a user-supplied, self-hosted rustypaste server, which is
+  commonly deployed on a LAN without TLS. Cleartext (http://) traffic must be
+  allowed app-wide since the server host/port is configured at runtime by the
+  user and cannot be pinned to a known allowlist.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

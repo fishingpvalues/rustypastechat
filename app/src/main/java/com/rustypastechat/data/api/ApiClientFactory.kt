@@ -33,6 +33,9 @@ class ApiClientFactory @Inject constructor(
     }
 
     fun createPasteApi(baseUrl: String): RustyPasteApi {
+        require(baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+            "Paste server URL must start with http:// or https://"
+        }
         val url = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
         return Retrofit.Builder()
             .baseUrl(url)
@@ -55,6 +58,9 @@ class ApiClientFactory @Inject constructor(
     }
 
     fun createOpenAiApi(baseUrl: String): OpenAiApi {
+        require(baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+            "LLM endpoint URL must start with http:// or https://"
+        }
         val url = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
         return Retrofit.Builder()
             .baseUrl(url)

@@ -458,7 +458,7 @@ class ChatViewModel @Inject constructor(
     fun forwardMessage(messageId: String) {
         _uiState.update { it.copy(forwardTargetMessageId = messageId) }
         viewModelScope.launch {
-            val messages = pasteRepository.loadChatHistory(Message.DEFAULT_CHAT).getOrNull() ?: emptyList()
+            val messages = pasteRepository.loadAllMessages().getOrNull() ?: emptyList()
             val options = messages.map { it.chatId }.distinct()
                 .filter { it != currentChatId }
                 .map { id -> id to (if (id == Message.DEFAULT_CHAT) "General" else "Chat $id") }

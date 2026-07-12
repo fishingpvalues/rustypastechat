@@ -134,6 +134,10 @@ fun SettingsScreen(
     // straight to ChatList instead of returning to the Settings main page first —
     // inconsistent with every other back-navigation in the app.
     BackHandler(enabled = currentPage != SettingsPage.Main) {
+        when (currentPage) {
+            SettingsPage.Appearance, SettingsPage.Server, SettingsPage.Llm, SettingsPage.Security -> onSave()
+            else -> {}
+        }
         currentPage = SettingsPage.Main
     }
 
@@ -169,7 +173,10 @@ fun SettingsScreen(
                 onUpdateShowDateHeaders = onUpdateShowDateHeaders,
                 onUpdateMarkdownEnabled = onUpdateMarkdownEnabled,
                 onSave = { onSave(); currentPage = SettingsPage.Main },
-                onBack = { currentPage = SettingsPage.Main }
+                // Editing a field only updates in-memory UI state (SettingsViewModel.update*);
+                // it's never persisted until onSave() runs. Save on exit too, or back
+                // navigation silently discards whatever the user just typed/toggled.
+                onBack = { onSave(); currentPage = SettingsPage.Main }
             )
             SettingsPage.Server -> ServerPage(
                 uiState = uiState,
@@ -177,7 +184,7 @@ fun SettingsScreen(
                 onUpdateToken = onUpdateAuthToken,
                 onTestConnection = onTestConnection,
                 onSave = { onSave(); currentPage = SettingsPage.Main },
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { onSave(); currentPage = SettingsPage.Main }
             )
             SettingsPage.Llm -> LlmPage(
                 uiState = uiState,
@@ -186,14 +193,14 @@ fun SettingsScreen(
                 onUpdateApiKey = onUpdateLlmApiKey,
                 onUpdateModel = onUpdateLlmModel,
                 onSave = { onSave(); currentPage = SettingsPage.Main },
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { onSave(); currentPage = SettingsPage.Main }
             )
             SettingsPage.Security -> SecurityPage(
                 uiState = uiState,
                 onUpdateBiometric = onUpdateBiometric,
                 onUpdateLockTimeout = onUpdateLockTimeout,
                 onSave = { onSave(); currentPage = SettingsPage.Main },
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { onSave(); currentPage = SettingsPage.Main }
             )
             SettingsPage.Storage -> StoragePage(
                 uiState = uiState,

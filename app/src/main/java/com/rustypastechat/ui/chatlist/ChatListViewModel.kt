@@ -53,7 +53,7 @@ class ChatListViewModel @Inject constructor(
 
     fun loadChats() = viewModelScope.launch {
         _state.update { it.copy(isLoading = true) }
-        pasteRepo.loadChatHistory(Message.DEFAULT_CHAT)
+        pasteRepo.loadAllMessages()
             .onSuccess { messages ->
                 val chats = groupMessagesByChat(messages)
                 allChats.clear()
