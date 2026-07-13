@@ -140,4 +140,20 @@ class MessageModelTest {
         assertEquals("hello world", target.text)
         assertTrue(target.isOutgoing)
     }
+
+    @Test
+    fun `stripEditedSentinel detects the sentinel through rustypaste's trailing newline normalization`() {
+        // rustypaste always appends a trailing newline to stored text, so the sentinel
+        // check has to tolerate "body edited\n", not just the bare "body edited".
+        val (text, edited) = Message.stripEditedSentinel("fixed typo${Message.EDITED_SENTINEL}\n")
+        assertEquals("fixed typo", text)
+        assertTrue(edited)
+    }
+
+    @Test
+    fun `stripEditedSentinel leaves unedited text untouched`() {
+        val (text, edited) = Message.stripEditedSentinel("just a normal message\n")
+        assertEquals("just a normal message\n", text)
+        assertFalse(edited)
+    }
 }

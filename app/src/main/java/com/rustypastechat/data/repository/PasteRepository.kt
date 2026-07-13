@@ -3,6 +3,7 @@ package com.rustypastechat.data.repository
 import com.rustypastechat.data.api.ApiClientFactory
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
+import com.rustypastechat.data.model.ChatHistoryPage
 import com.rustypastechat.data.model.MediaType
 import com.rustypastechat.data.model.Message
 import com.rustypastechat.data.model.MessageStatus
@@ -22,6 +23,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -89,6 +91,27 @@ class PasteRepository @Inject constructor(
         else throw Exception("Oneshot upload failed: ${response.code()}")
     }
 
+    /** Updates a text paste's content in place. rustypaste refuses to re-upload an existing
+     *  filename ("file already exists"), so this uploads the new content under a fresh
+     *  filename, marks [oldFileName] as superseded (so it's filtered out of reconstruction
+     *  even if the best-effort delete below fails, e.g. no delete token configured), and
+     *  returns the new filename to store as the message's `pasteFileName` going forward. */
+    suspend fun updatePasteContent(
+        oldFileName: String,
+        newContent: String,
+        chatId: String,
+        timestamp: Long,
+        isOutgoing: Boolean
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val newFileName = Message.buildFileName(chatId, timestamp, isOutgoing, UUID.randomUUID().toString())
+            uploadText(newContent, newFileName).getOrThrow()
+            preferencesManager.addSupersededFileName(oldFileName)
+            deleteFile(oldFileName)
+            newFileName
+        }
+    }
+
     suspend fun deleteFile(filename: String): Result<Unit> = runCatching {
         val response = getApi().deleteFile(filename)
         if (response.isSuccessful) Unit
@@ -121,7 +144,8 @@ class PasteRepository @Inject constructor(
      *  [loadChatHistory] instead. */
     suspend fun loadAllMessages(): Result<List<Message>> = withContext(Dispatchers.IO) {
         runCatching {
-            val pastes = listFiles().getOrThrow()
+            val superseded = preferencesManager.supersededFileNamesFlow.first()
+            val pastes = listFiles().getOrThrow().filter { it.fileName !in superseded }
             val settings = preferencesManager.settingsFlow.first()
 
             val chatPastes = pastes.filter { Message.isChatFile(it.fileName) }
@@ -149,10 +173,68 @@ class PasteRepository @Inject constructor(
         }
     }
 
-    /** Reconstructs messages for a single chat. Legacy/imported pastes predate multi-chat
-     *  support and have no chat id of their own, so they only ever belong to the default chat. */
-    suspend fun loadChatHistory(chatId: String = Message.DEFAULT_CHAT): Result<List<Message>> =
-        loadAllMessages().map { all -> all.filter { it.chatId == chatId } }
+    /**
+     * Reconstructs one page of a single chat's messages, newest-first-then-reversed, without
+     * downloading content for every other chat's messages too — [loadAllMessages] does that,
+     * which is fine once for the chat-list overview but would make opening a single chat pay
+     * for every message on the whole server.
+     *
+     * Paging works off each filename's own embedded timestamp (cheap — no network needed to
+     * sort), so only the [pageSize] messages actually being shown ever get downloaded. Pass
+     * the oldest timestamp already loaded as [beforeTimestamp] to fetch the next page back.
+     *
+     * Legacy/imported pastes have no embedded timestamp of their own and predate multi-chat
+     * support, so they only ever surface on the default chat's first page (dedup against
+     * already-superseded content is scoped to that page, not the whole chat — an accepted
+     * tradeoff for not downloading the whole server just to page one chat).
+     */
+    suspend fun loadChatHistory(
+        chatId: String = Message.DEFAULT_CHAT,
+        beforeTimestamp: Long? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): Result<ChatHistoryPage> = withContext(Dispatchers.IO) {
+        runCatching {
+            val superseded = preferencesManager.supersededFileNamesFlow.first()
+            val pastes = listFiles().getOrThrow().filter { it.fileName !in superseded }
+            val settings = preferencesManager.settingsFlow.first()
+
+            val chatPastesForThisChat = pastes.filter {
+                Message.isChatFile(it.fileName) && Message.extractChatId(it.fileName) == chatId
+            }
+            val sortedNewestFirst = chatPastesForThisChat.sortedByDescending { embeddedTimestamp(it.fileName) }
+            val windowed = if (beforeTimestamp == null) sortedNewestFirst
+                else sortedNewestFirst.filter { embeddedTimestamp(it.fileName) < beforeTimestamp }
+            val page = windowed.take(pageSize)
+            val hasMore = windowed.size > pageSize
+
+            val chatMessages = coroutineScope {
+                page.map { paste -> async { pasteToMessage(paste, settings) } }.awaitAll().filterNotNull()
+            }
+
+            val importedMessages = if (chatId == Message.DEFAULT_CHAT && beforeTimestamp == null) {
+                val otherPastes = pastes.filter { !Message.isChatFile(it.fileName) }
+                val chatContentSet = chatMessages.mapTo(mutableSetOf()) { it.text }
+                coroutineScope {
+                    otherPastes.sortedBy { it.creationDateUtc ?: "" }.map { paste ->
+                        async { pasteToImportedMessage(paste, settings, chatContentSet) }
+                    }.awaitAll().filterNotNull()
+                }
+            } else {
+                emptyList()
+            }
+
+            ChatHistoryPage(
+                messages = (chatMessages + importedMessages).sortedBy { it.timestamp },
+                hasMore = hasMore
+            )
+        }
+    }
+
+    private fun embeddedTimestamp(fileName: String): Long = Message.parseFromFileName(fileName)?.timestamp ?: 0L
+
+    companion object {
+        const val DEFAULT_PAGE_SIZE = 50
+    }
 
     private suspend fun pasteToImportedMessage(
         paste: PasteItem,
@@ -193,10 +275,19 @@ class PasteRepository @Inject constructor(
         val extensionType = mediaTypeForExtension(paste.fileName)
         val isMedia = parsed.isMedia || extensionType != null
         val content = getFileContent(paste.fileName).getOrNull() ?: return null
-        val text = String(content, Charsets.UTF_8)
+        val rawText = String(content, Charsets.UTF_8)
+        val (withoutReactions, reactions) = Message.stripReactionsSentinel(rawText)
+        val (withoutEdited, isEdited) = Message.stripEditedSentinel(withoutReactions)
+        val (withoutThread, threadRootId) = Message.stripThreadSentinel(withoutEdited)
+        val (text, isLlm) = Message.stripLlmSentinel(withoutThread)
 
         val mediaUrl = if (isMedia) getFileUrl(settings, paste.fileName) else null
-        val creationTs = parseCreationTimestamp(paste.creationDateUtc) ?: parsed.timestamp
+        // The filename's embedded timestamp — not the server's upload time — is the
+        // authoritative send time: it's what this app itself chose when uploading,
+        // whether for a live message or a backdated import (e.g. a WhatsApp import
+        // preserving each message's original date). The server's creation_date_utc only
+        // ever matters for legacy/imported pastes with no embedded timestamp of their own
+        // (see pasteToImportedMessage).
         // Any media attachment's downloaded bytes are binary, not UTF-8 text — fall back to
         // the server filename instead of showing decoded garbage as the caption/name.
         val displayText = if (isMedia) paste.fileName else text
@@ -206,11 +297,14 @@ class PasteRepository @Inject constructor(
             text = displayText,
             isOutgoing = parsed.isOutgoing,
             status = MessageStatus.DELIVERED,
-            timestamp = creationTs,
+            timestamp = parsed.timestamp,
             mediaUrl = mediaUrl,
             mediaType = if (isMedia) (extensionType ?: MediaType.FILE) else null,
             pasteFileName = paste.fileName,
-            isLlmResponse = !parsed.isOutgoing,
+            isEdited = isEdited && !isMedia,
+            reactions = if (isMedia) emptyList() else reactions,
+            isLlmResponse = isLlm && !isMedia,
+            threadRootId = threadRootId,
             chatId = parsed.chatId
         )
     }

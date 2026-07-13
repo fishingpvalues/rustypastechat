@@ -23,6 +23,7 @@ fun ChatListRoute(
         onSetCategory = viewModel::setChatCategory,
         onDeleteChat = viewModel::deleteChat,
         onRefresh = viewModel::loadChats,
+        onImportWhatsAppChat = viewModel::importWhatsAppChat,
         onChatClick = onChatClick,
         onSettings = onSettings
     )

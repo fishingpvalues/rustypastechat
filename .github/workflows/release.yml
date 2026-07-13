@@ -29,8 +29,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      # Only present on the real repo once RUSTYPASTECHAT_KEYSTORE_BASE64 (and the other
+      # RUSTYPASTECHAT_* secrets below) are added under Settings > Secrets and variables >
+      # Actions. Without them, the release build falls back to debug signing (see
+      # app/build.gradle.kts) — functional for testing, but not a real Play Store artifact.
+      - name: Decode release keystore
+        if: ${{ secrets.RUSTYPASTECHAT_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.RUSTYPASTECHAT_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "RUSTYPASTECHAT_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon
+        env:
+          RUSTYPASTECHAT_KEYSTORE_PASSWORD: ${{ secrets.RUSTYPASTECHAT_KEYSTORE_PASSWORD }}
+          RUSTYPASTECHAT_KEY_ALIAS: ${{ secrets.RUSTYPASTECHAT_KEY_ALIAS }}
+          RUSTYPASTECHAT_KEY_PASSWORD: ${{ secrets.RUSTYPASTECHAT_KEY_PASSWORD }}
+          RUSTYPASTECHAT_VERSION_CODE: ${{ github.run_number }}
 
       - name: Extract version
         id: version
@@ -40,14 +55,14 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk \
-            rustypastechat-v${{ steps.version.outputs.version }}-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk \
+            rustypastechat-v${{ steps.version.outputs.version }}-release.apk
 
       - name: Publish nightly release
         if: github.ref == 'refs/heads/master'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          APK="rustypastechat-v${VERSION}-debug.apk"
+          APK="rustypastechat-v${VERSION}-release.apk"
 
           gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
           git push origin :refs/tags/nightly 2>/dev/null || true
@@ -59,7 +74,7 @@ jobs:
             "$APK" \
             --title "Nightly Build (v${VERSION})" \
             --prerelease \
-            --notes "## Nightly Debug Build
+            --notes "## Nightly Release Build
 
           **Version:** ${VERSION}
           **Commit:** ${{ github.sha }}
@@ -74,7 +89,7 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${{ steps.version.outputs.version }}"
-          APK="rustypastechat-v${VERSION}-debug.apk"
+          APK="rustypastechat-v${VERSION}-release.apk"
 
           gh release create "$TAG" \
             "$APK" \

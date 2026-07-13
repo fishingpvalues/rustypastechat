@@ -21,7 +21,7 @@ export ANDROID_HOME
 PATH := $(JAVA_HOME)/bin:$(dir $(GRADLE)):$(ANDROID_HOME)/platform-tools:$(ANDROID_HOME)/emulator:$(PATH)
 
 APK_DEBUG    = app/build/outputs/apk/debug/app-debug.apk
-APK_RELEASE  = app/build/outputs/apk/release/app-release-unsigned.apk
+APK_RELEASE  = app/build/outputs/apk/release/app-release.apk
 TEST_RESULTS = app/build/test-results
 
 .PHONY: all ci debug release clean install uninstall lint test test-report deps \

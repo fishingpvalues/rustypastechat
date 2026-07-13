@@ -54,7 +54,10 @@ data class ChatUiState(
     val viewedOneshotIds: Set<String> = emptySet(),
     val starredIds: Set<String> = emptySet(),
     val forwardTargetMessageId: String? = null,
-    val forwardChatOptions: List<Pair<String, String>> = emptyList()
+    val forwardChatOptions: List<Pair<String, String>> = emptyList(),
+    val hasMoreHistory: Boolean = false,
+    val isLoadingMoreHistory: Boolean = false,
+    val activeThreadRootId: String? = null
 )
 
 @HiltViewModel
@@ -114,16 +117,49 @@ class ChatViewModel @Inject constructor(
     fun loadChatHistory() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, error = OneTimeEvent(null)) }
+            val hiddenIds = preferencesManager.hiddenIdsFlow.first()
             pasteRepository.loadChatHistory(currentChatId)
-                .onSuccess { messages ->
+                .onSuccess { page ->
                     _uiState.update {
-                        it.copy(messages = messages, historyLoaded = true, isRefreshing = false, isLoading = false)
+                        it.copy(
+                            messages = page.messages.filterNot { m -> m.id in hiddenIds },
+                            historyLoaded = true, isRefreshing = false,
+                            isLoading = false, hasMoreHistory = page.hasMore
+                        )
                     }
                 }
                 .onFailure { e ->
                     _uiState.update {
                         it.copy(isRefreshing = false, isLoading = false, isConnected = false,
                             error = OneTimeEvent("Could not load chat history: ${e.message}"))
+                    }
+                }
+        }
+    }
+
+    /** Fetches the next page of older messages and prepends them — the chat only ever
+     *  downloads content for messages actually being shown, not the whole chat at once. */
+    fun loadMoreHistory() {
+        val state = _uiState.value
+        if (!state.hasMoreHistory || state.isLoadingMoreHistory) return
+        val oldestTimestamp = state.messages.minOfOrNull { it.timestamp } ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMoreHistory = true) }
+            val hiddenIds = preferencesManager.hiddenIdsFlow.first()
+            pasteRepository.loadChatHistory(currentChatId, beforeTimestamp = oldestTimestamp)
+                .onSuccess { page ->
+                    _uiState.update {
+                        it.copy(
+                            messages = page.messages.filterNot { m -> m.id in hiddenIds } + it.messages,
+                            hasMoreHistory = page.hasMore,
+                            isLoadingMoreHistory = false
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update {
+                        it.copy(isLoadingMoreHistory = false, error = OneTimeEvent("Could not load more history: ${e.message}"))
                     }
                 }
         }
@@ -181,18 +217,27 @@ class ChatViewModel @Inject constructor(
         val msg = _uiState.value.messages.find { it.id == id } ?: return
         _uiState.update { state ->
             val updated = state.messages.map { m ->
-                if (m.id == id) m.copy(text = newText, status = MessageStatus.SENDING) else m
+                if (m.id == id) m.copy(text = newText, status = MessageStatus.SENDING, isEdited = true) else m
             }
             state.copy(messages = updated, editingMessageId = null, editingMessageText = "")
         }
 
         viewModelScope.launch {
-            val fileName = msg.pasteFileName ?: Message.buildFileName(currentChatId, System.currentTimeMillis(), true, id)
-            pasteRepository.uploadText(newText, fileName)
-                .onSuccess {
+            val existingFileName = msg.pasteFileName
+            var newContent = if (msg.isLlmResponse) Message.appendLlmSentinel(newText) else newText
+            newContent = Message.appendThreadSentinel(newContent, msg.threadRootId)
+            newContent += Message.EDITED_SENTINEL
+            val result = if (existingFileName != null) {
+                pasteRepository.updatePasteContent(existingFileName, newContent, currentChatId, msg.timestamp, msg.isOutgoing)
+            } else {
+                val fileName = Message.buildFileName(currentChatId, System.currentTimeMillis(), true, id)
+                pasteRepository.uploadText(newContent, fileName)
+            }
+            result
+                .onSuccess { newFileName ->
                     _uiState.update { state ->
                         val updated = state.messages.map { m ->
-                            if (m.id == id) m.copy(status = MessageStatus.DELIVERED, pasteFileName = fileName) else m
+                            if (m.id == id) m.copy(status = MessageStatus.DELIVERED, pasteFileName = newFileName) else m
                         }
                         state.copy(messages = updated)
                     }
@@ -443,13 +488,60 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    fun deleteMessage(messageId: String) {
+    /** [forEveryone] removes the paste file from the server, same as before. When false
+     *  ("delete for me"), the message only disappears from this device — its id is
+     *  persisted to a locally-hidden set and filtered out of every future reconstruction,
+     *  but the remote paste file (and thus the message, for anyone else) is untouched. */
+    fun deleteMessage(messageId: String, forEveryone: Boolean = true) {
         val msg = _uiState.value.messages.find { it.id == messageId } ?: return
         _uiState.update { state ->
             state.copy(messages = state.messages.filter { it.id != messageId })
         }
-        msg.pasteFileName?.let { fileName ->
-            viewModelScope.launch { pasteRepository.deleteFile(fileName) }
+        if (forEveryone) {
+            msg.pasteFileName?.let { fileName ->
+                viewModelScope.launch {
+                    // Delete may silently fail server-side (rustypaste requires a configured
+                    // delete token) — mark superseded regardless so it never reappears on
+                    // this device even if the remote copy survives.
+                    preferencesManager.addSupersededFileName(fileName)
+                    pasteRepository.deleteFile(fileName)
+                }
+            }
+        } else {
+            viewModelScope.launch {
+                val updated = preferencesManager.hiddenIdsFlow.first() + messageId
+                preferencesManager.saveHiddenIds(updated)
+            }
+        }
+    }
+
+    /** Tap-to-react, toggling the given emoji on a message. Persisted by re-uploading the
+     *  same paste file with a reactions sentinel appended — same trick [saveEditedMessage]
+     *  uses for its "edited" flag. Media messages are excluded: their paste content is the
+     *  media's filename caption, not real text, so re-uploading it would corrupt nothing
+     *  visible but would be semantically wrong — there's no text body to react-tag. */
+    fun toggleReaction(messageId: String, emoji: String) {
+        val msg = _uiState.value.messages.find { it.id == messageId } ?: return
+        val fileName = msg.pasteFileName ?: return
+        if (msg.mediaUrl != null) return
+
+        val newReactions = if (emoji in msg.reactions) msg.reactions - emoji else msg.reactions + emoji
+        _uiState.update { state ->
+            state.copy(messages = state.messages.map { if (it.id == messageId) it.copy(reactions = newReactions) else it })
+        }
+        viewModelScope.launch {
+            var content = if (msg.isLlmResponse) Message.appendLlmSentinel(msg.text) else msg.text
+            content = Message.appendThreadSentinel(content, msg.threadRootId)
+            if (msg.isEdited) content += Message.EDITED_SENTINEL
+            content = Message.appendReactionsSentinel(content, newReactions)
+            pasteRepository.updatePasteContent(fileName, content, currentChatId, msg.timestamp, msg.isOutgoing)
+                .onSuccess { newFileName ->
+                    _uiState.update { state ->
+                        state.copy(messages = state.messages.map {
+                            if (it.id == messageId) it.copy(pasteFileName = newFileName) else it
+                        })
+                    }
+                }
         }
     }
 
@@ -543,17 +635,28 @@ class ChatViewModel @Inject constructor(
     private fun checkLlmAutoReply(userText: String) {
         val settings = _uiState.value.settings
         if (!settings.llmEnabled || settings.llmEndpoint.isBlank()) return
+        runLlmReply(threadRootId = null, llmMessages = buildLlmContext(userText))
+    }
 
+    /** Threads branch a follow-up conversation off an LLM response instead of continuing
+     *  it inline in the main chat — the reply here is scoped to just the root message
+     *  plus whatever's already in the thread, not the main chat's sliding window. */
+    private fun checkLlmThreadReply(rootId: String, userText: String) {
+        val settings = _uiState.value.settings
+        if (!settings.llmEnabled || settings.llmEndpoint.isBlank()) return
+        runLlmReply(threadRootId = rootId, llmMessages = buildThreadLlmContext(rootId, userText))
+    }
+
+    private fun runLlmReply(threadRootId: String?, llmMessages: List<LlmMessage>) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLlmTyping = true) }
             val replyId = UUID.randomUUID().toString()
             var streamedText = ""
 
             val streamMsg = Message(id = replyId, text = "", isOutgoing = false,
-                status = MessageStatus.DELIVERED, isLlmResponse = true)
+                status = MessageStatus.DELIVERED, isLlmResponse = true, threadRootId = threadRootId)
             _uiState.update { it.copy(messages = it.messages + streamMsg) }
 
-            val llmMessages = buildLlmContext(userText)
             withContext(ioDispatcher) {
                 llmRepository.sendMessage(
                     messages = llmMessages,
@@ -568,7 +671,7 @@ class ChatViewModel @Inject constructor(
                     },
                     onComplete = {
                         _uiState.update { it.copy(isLlmTyping = false) }
-                        persistLlmReply(replyId, streamedText)
+                        persistLlmReply(replyId, streamedText, threadRootId)
                     },
                     onError = { error ->
                         _uiState.update { state ->
@@ -586,12 +689,13 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun persistLlmReply(replyId: String, text: String) {
+    private fun persistLlmReply(replyId: String, text: String, threadRootId: String? = null) {
         if (text.isBlank()) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val fileName = Message.buildFileName(currentChatId, now, false, replyId)
-            pasteRepository.uploadText(text, fileName)
+            val content = Message.appendThreadSentinel(Message.appendLlmSentinel(text), threadRootId)
+            pasteRepository.uploadText(content, fileName)
                 .onSuccess {
                     _uiState.update { state ->
                         val updated = state.messages.map { m ->
@@ -606,13 +710,76 @@ class ChatViewModel @Inject constructor(
     private fun buildLlmContext(currentText: String): List<LlmMessage> {
         val messages = mutableListOf<LlmMessage>()
         messages.add(LlmMessage("system", "You are a helpful assistant chatting via a pastebin service. Keep responses concise and helpful."))
-        val history = _uiState.value.messages.filter { it.isOutgoing || it.isLlmResponse }
-        for (msg in history.takeLast(10)) {
+        val history = _uiState.value.messages.filter { (it.isOutgoing || it.isLlmResponse) && it.threadRootId == null }
+        val windowSize = _uiState.value.settings.llmContextWindowSize.coerceAtLeast(0)
+        for (msg in history.takeLast(windowSize)) {
             val role = if (msg.isOutgoing) "user" else "assistant"
             if (msg.text.isNotBlank()) messages.add(LlmMessage(role, msg.text))
         }
         messages.add(LlmMessage("user", currentText))
         return messages
+    }
+
+    private fun buildThreadLlmContext(rootId: String, currentText: String): List<LlmMessage> {
+        val messages = mutableListOf<LlmMessage>()
+        messages.add(LlmMessage("system", "You are continuing a threaded follow-up conversation about a previous answer. Keep responses concise and helpful."))
+        val root = _uiState.value.messages.find { it.id == rootId }
+        root?.let { if (it.text.isNotBlank()) messages.add(LlmMessage(if (it.isOutgoing) "user" else "assistant", it.text)) }
+        val threadHistory = _uiState.value.messages.filter { it.threadRootId == rootId }.sortedBy { it.timestamp }
+        for (msg in threadHistory) {
+            val role = if (msg.isOutgoing) "user" else "assistant"
+            if (msg.text.isNotBlank()) messages.add(LlmMessage(role, msg.text))
+        }
+        messages.add(LlmMessage("user", currentText))
+        return messages
+    }
+
+    fun openThread(rootId: String) {
+        _uiState.update { it.copy(activeThreadRootId = rootId) }
+    }
+
+    fun closeThread() {
+        _uiState.update { it.copy(activeThreadRootId = null) }
+    }
+
+    fun threadMessages(rootId: String): List<Message> =
+        _uiState.value.messages.filter { it.threadRootId == rootId }.sortedBy { it.timestamp }
+
+    fun sendThreadReply(rootId: String, text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
+
+        val messageId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val fileName = Message.buildFileName(currentChatId, now, true, messageId)
+        val content = Message.appendThreadSentinel(trimmed, rootId)
+
+        val msg = Message(
+            id = messageId, text = trimmed, isOutgoing = true,
+            status = MessageStatus.SENDING, timestamp = now,
+            pasteFileName = fileName, threadRootId = rootId
+        )
+        _uiState.update { it.copy(messages = it.messages + msg) }
+
+        viewModelScope.launch {
+            pasteRepository.uploadText(content, fileName)
+                .onSuccess {
+                    _uiState.update { state ->
+                        state.copy(messages = state.messages.map { m ->
+                            if (m.id == messageId) m.copy(status = MessageStatus.DELIVERED) else m
+                        })
+                    }
+                    checkLlmThreadReply(rootId, trimmed)
+                }
+                .onFailure { e ->
+                    _uiState.update { state ->
+                        state.copy(
+                            messages = state.messages.map { m -> if (m.id == messageId) m.copy(status = MessageStatus.FAILED) else m },
+                            error = OneTimeEvent(e.message)
+                        )
+                    }
+                }
+        }
     }
 
     override fun onCleared() {

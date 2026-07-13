@@ -25,6 +25,7 @@ data class AppSettings(
     val llmEndpoint: String = "",
     val llmApiKey: String = "",
     val llmModel: String = "gpt-3.5-turbo",
+    val llmContextWindowSize: Int = 10,
     val biometricEnabled: Boolean = false,
     val lockTimeoutSeconds: Int = 30,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,

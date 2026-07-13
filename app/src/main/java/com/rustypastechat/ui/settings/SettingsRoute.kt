@@ -23,6 +23,7 @@ fun SettingsRoute(
         onUpdateLlmEndpoint = viewModel::updateLlmEndpoint,
         onUpdateLlmApiKey = viewModel::updateLlmApiKey,
         onUpdateLlmModel = viewModel::updateLlmModel,
+        onUpdateLlmContextWindow = viewModel::updateLlmContextWindow,
         onUpdateBiometric = viewModel::updateBiometricEnabled,
         onUpdateLockTimeout = viewModel::updateLockTimeout,
         onUpdateThemeMode = viewModel::updateThemeMode,

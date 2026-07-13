@@ -65,6 +65,13 @@ object RustyColors {
     val ImportTextLight = TextSecondaryLight
     val ImportTextDark = TextSecondaryDark
 
+    // LLM assistant reply — patina teal instead of the Rust accent, so an AI-generated
+    // answer is never visually confused with a real outgoing/incoming chat message.
+    val LlmBgLight = Color(0xFFDCEEEA)
+    val LlmBgDark = Color(0xFF13302B)
+    val LlmTextLight = Color(0xFF0F3A33)
+    val LlmTextDark = Color(0xFFB6E6DC)
+
     // Links — rust-toned rather than generic blue, in both themes.
     val LinkLight = RustDark
     val LinkDark = RustLight

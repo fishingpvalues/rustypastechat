@@ -5,30 +5,43 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -54,7 +67,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import com.rustypastechat.ui.animations.rememberPulseAnim
 import java.io.FileOutputStream
@@ -79,7 +95,20 @@ fun MessageInput(
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
+    var showAttachMenu by remember { mutableStateOf(false) }
+
+    // The system Photo Picker (API 33+, backported via Google Play services on older
+    // devices) — no storage permission needed, matches Signal/Telegram's current gallery
+    // picker behavior.
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? -> uri?.let { onMediaSelected(it) } }
+
+    val documentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> uri?.let { onMediaSelected(it) } }
+
+    val audioLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? -> uri?.let { onMediaSelected(it) } }
 
@@ -116,6 +145,37 @@ fun MessageInput(
     val lockProgress = (-dragY / with(density) { LOCK_THRESHOLD.toPx() }).coerceIn(0f, 1f)
 
     Box(modifier = modifier.fillMaxWidth()) {
+        if (showAttachMenu) {
+            // Popup renders in its own layer above the whole screen and contributes
+            // nothing to this Box's measured size — unlike a plain child Box, it can't
+            // push the chat content down or shrink it to a blank scroll area.
+            Popup(
+                alignment = Alignment.BottomStart,
+                offset = with(density) { IntOffset(8.dp.roundToPx(), (-64).dp.roundToPx()) },
+                onDismissRequest = { showAttachMenu = false },
+                properties = PopupProperties(focusable = false)
+            ) {
+                AttachMenu(
+                    onGallery = {
+                        showAttachMenu = false
+                        galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                    },
+                    onDocument = {
+                        showAttachMenu = false
+                        documentLauncher.launch("*/*")
+                    },
+                    onAudio = {
+                        showAttachMenu = false
+                        audioLauncher.launch("audio/*")
+                    },
+                    onCamera = {
+                        showAttachMenu = false
+                        cameraLauncher.launch(null)
+                    }
+                )
+            }
+        }
+
         AnimatedVisibility(
             visible = isRecording && !isLocked,
             modifier = Modifier.align(Alignment.TopEnd).offset(x = (-14).dp, y = (-52).dp),
@@ -167,12 +227,12 @@ fun MessageInput(
                     }
                     else -> {
                         IconButton(
-                            onClick = { imagePickerLauncher.launch("*/*") },
+                            onClick = { showAttachMenu = !showAttachMenu },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Attach photo, video, or file",
+                                imageVector = if (showAttachMenu) Icons.Default.Close else Icons.Default.Add,
+                                contentDescription = if (showAttachMenu) "Close attachment menu" else "Attach media",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp)
                             )
@@ -381,6 +441,85 @@ private fun LockedRecordingRow(
         }
         FilledIconButton(onClick = onSend, modifier = Modifier.size(40.dp), shape = CircleShape) {
             Icon(Icons.AutoMirrored.Filled.Send, "Send voice message", modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+private data class AttachOption(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String,
+    val tint: Color,
+    val onClick: () -> Unit
+)
+
+/**
+ * WhatsApp/Telegram/Signal-style attach picker: tapping "+" reveals what *kind* of media
+ * to send first, and only then opens the picker suited to that kind — a photo/video
+ * gallery pick shouldn't dump the user into the same generic "any file" chooser as a
+ * document pick.
+ */
+@Composable
+private fun AttachMenu(
+    onGallery: () -> Unit,
+    onDocument: () -> Unit,
+    onAudio: () -> Unit,
+    onCamera: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val options = listOf(
+        AttachOption(Icons.Default.Image, "Gallery", Color(0xFF7E57C2), onGallery),
+        AttachOption(Icons.Default.PhotoCamera, "Camera", Color(0xFFEC407A), onCamera),
+        AttachOption(Icons.Default.Description, "Document", Color(0xFF5C6BC0), onDocument),
+        AttachOption(Icons.Default.MusicNote, "Audio", Color(0xFFFF7043), onAudio)
+    )
+
+    AnimatedVisibility(
+        visible = true,
+        modifier = modifier.padding(start = 8.dp, bottom = 8.dp),
+        enter = fadeIn(tween(150)) + expandVertically(tween(150), expandFrom = Alignment.Bottom),
+        exit = fadeOut(tween(120)) + shrinkVertically(tween(120), shrinkTowards = Alignment.Bottom)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 8.dp,
+            modifier = Modifier.width(200.dp)
+        ) {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                options.forEach { option ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                                onClick = option.onClick
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(option.tint, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                option.icon,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            option.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
     }
 }

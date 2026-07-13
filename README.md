@@ -51,6 +51,40 @@ make debug
 make install
 ```
 
+## Release Signing
+
+`make release` builds a signed release APK. Signing config comes from either environment
+variables (used by CI) or `local.properties` (used for local builds) — never from committed
+source. If neither is set, the release build type falls back to **debug signing** so it still
+compiles for local testing; that fallback is not suitable for the Play Store or any real
+distribution.
+
+To sign locally, add to `local.properties`:
+
+```properties
+release.storeFile=/absolute/or/relative/path/to/your.jks
+release.storePassword=...
+release.keyAlias=...
+release.keyPassword=...
+```
+
+To sign in CI, add these repo secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `RUSTYPASTECHAT_KEYSTORE_BASE64` | `base64 -i your.jks` output |
+| `RUSTYPASTECHAT_KEYSTORE_PASSWORD` | keystore password |
+| `RUSTYPASTECHAT_KEY_ALIAS` | key alias |
+| `RUSTYPASTECHAT_KEY_PASSWORD` | key password |
+
+Generate a real signing key (keep it forever — the Play Store requires the same key for every
+update to an app):
+
+```bash
+keytool -genkeypair -v -keystore release.jks -alias rustypastechat \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
 ## Architecture
 
 ```

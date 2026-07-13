@@ -47,7 +47,12 @@ fun ChatRoute(
         onRetryMessage = viewModel::retryMessage,
         onViewOneshot = viewModel::markOneshotViewed,
         onToggleStar = viewModel::toggleStarred,
+        onReactMessage = viewModel::toggleReaction,
+        onOpenThread = viewModel::openThread,
+        onCloseThread = viewModel::closeThread,
+        onSendThreadReply = viewModel::sendThreadReply,
         onRefresh = viewModel::loadChatHistory,
+        onLoadMoreHistory = viewModel::loadMoreHistory,
         getFilteredMessages = viewModel::getFilteredMessages,
         onNavigateToSettings = onNavigateToSettings,
         onNavigateBack = onNavigateBack

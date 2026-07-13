@@ -100,6 +100,7 @@ fun ChatListScreen(
     onSetCategory: (String, ChatCategory) -> Unit,
     onDeleteChat: (String) -> Unit,
     onRefresh: () -> Unit,
+    onImportWhatsAppChat: (android.net.Uri, String) -> Unit,
     onChatClick: (String) -> Unit,
     onSettings: () -> Unit
 ) {
@@ -107,12 +108,83 @@ fun ChatListScreen(
     var showDetailDialog by remember { mutableStateOf<ChatThread?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<String?>(null) }
     var overflowExpanded by remember { mutableStateOf(false) }
+    var pendingWhatsAppImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val whatsAppFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { pendingWhatsAppImportUri = it } }
+
+    pendingWhatsAppImportUri?.let { uri ->
+        var chatName by remember(uri) { mutableStateOf("WhatsApp Import") }
+        AlertDialog(
+            onDismissRequest = { pendingWhatsAppImportUri = null },
+            title = { Text("Import WhatsApp Chat") },
+            text = {
+                Column {
+                    Text(
+                        "Every message uploads as a paste note with its original WhatsApp date and time preserved.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = chatName,
+                        onValueChange = { chatName = it },
+                        label = { Text("Chat name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onImportWhatsAppChat(uri, chatName.ifBlank { "WhatsApp Import" })
+                    pendingWhatsAppImportUri = null
+                }) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingWhatsAppImportUri = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (state.isImportingWhatsApp) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Importing…") },
+            text = {
+                val progress = state.whatsAppImportProgress
+                Text(
+                    if (progress != null && progress.second > 0) "${progress.first} / ${progress.second} messages"
+                    else "Reading chat export…"
+                )
+            },
+            confirmButton = {}
+        )
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { /* placeholder */ }
 
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    androidx.compose.runtime.LaunchedEffect(state.whatsAppImportResult) {
+        state.whatsAppImportResult.getContentIfNotHandled()?.let { result ->
+            val summary = if (result.failed == 0) {
+                "Imported ${result.uploaded} messages" +
+                    (if (result.mediaPlaceholders > 0) " (${result.mediaPlaceholders} media placeholders)" else "")
+            } else {
+                "Imported ${result.uploaded}/${result.totalMessages} messages, ${result.failed} failed"
+            }
+            snackbarHostState.showSnackbar(summary)
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(state.error) {
+        state.error.getContentIfNotHandled()?.let { snackbarHostState.showSnackbar(it) }
+    }
+
     Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         topBar = {
             if (state.isSearching) {
                 TopAppBar(
@@ -157,6 +229,14 @@ fun ChatListScreen(
                                 Icon(Icons.Default.MoreVert, "More")
                             }
                             DropdownMenu(expanded = overflowExpanded, onDismissRequest = { overflowExpanded = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Import WhatsApp Chat") },
+                                    onClick = {
+                                        overflowExpanded = false
+                                        whatsAppFileLauncher.launch("*/*")
+                                    },
+                                    leadingIcon = { Icon(Icons.Rounded.Add, null) }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Settings") },
                                     onClick = { onSettings(); overflowExpanded = false },

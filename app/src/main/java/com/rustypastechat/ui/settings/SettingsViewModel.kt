@@ -87,6 +87,10 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(settings = it.settings.copy(llmModel = model)) }
     }
 
+    fun updateLlmContextWindow(size: Int) {
+        _uiState.update { it.copy(settings = it.settings.copy(llmContextWindowSize = size)) }
+    }
+
     fun updateBiometricEnabled(enabled: Boolean) {
         _uiState.update { it.copy(settings = it.settings.copy(biometricEnabled = enabled)) }
     }

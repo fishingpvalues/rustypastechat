@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddReaction
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.InsertDriveFile
@@ -38,6 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
@@ -73,6 +75,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rustypastechat.data.model.Message
@@ -119,6 +123,7 @@ fun SwipeableMessageBubble(
     onLongPress: (String) -> Unit = {},
     onViewOneshot: (String) -> Unit = {},
     onToggleStar: (String) -> Unit = {},
+    onReact: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val offsetX = remember { Animatable(0f) }
@@ -215,7 +220,8 @@ fun SwipeableMessageBubble(
                 onReply = onReply,
                 onForward = onForward,
                 onViewOneshot = onViewOneshot,
-                onToggleStar = onToggleStar
+                onToggleStar = onToggleStar,
+                onReact = onReact
             )
         }
     }
@@ -234,17 +240,21 @@ private fun MessageBubbleContent(
     onReply: (String) -> Unit,
     onForward: (String) -> Unit,
     onViewOneshot: (String) -> Unit,
-    onToggleStar: (String) -> Unit
+    onToggleStar: (String) -> Unit,
+    onReact: (String, String) -> Unit = { _, _ -> }
 ) {
     val darkTheme = isSystemInDarkTheme()
     val isOutgoing = message.isOutgoing
+    var showReactionPicker by remember { mutableStateOf(false) }
 
     val bubbleColor = when {
+        message.isLlmResponse -> if (darkTheme) RustyColors.LlmBgDark else RustyColors.LlmBgLight
         message.isImported -> if (darkTheme) RustyColors.ImportBgDark else RustyColors.ImportBgLight
         isOutgoing -> if (darkTheme) RustyColors.BubbleOutgoingDark else RustyColors.BubbleOutgoingLight
         else -> if (darkTheme) RustyColors.BubbleIncomingDark else RustyColors.BubbleIncomingLight
     }
     val textColor = when {
+        message.isLlmResponse -> if (darkTheme) RustyColors.LlmTextDark else RustyColors.LlmTextLight
         message.isImported -> if (darkTheme) RustyColors.ImportTextDark else RustyColors.ImportTextLight
         isOutgoing -> if (darkTheme) RustyColors.BubbleOutgoingTextDark else RustyColors.BubbleOutgoingTextLight
         else -> if (darkTheme) RustyColors.BubbleIncomingTextDark else RustyColors.BubbleIncomingTextLight
@@ -362,11 +372,85 @@ private fun MessageBubbleContent(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                 }
 
+                if (message.reactions.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = textColor.copy(alpha = 0.12f),
+                        modifier = Modifier.clickable { showReactionPicker = true }
+                    ) {
+                        Text(
+                            message.reactions.joinToString(" "),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+
+                if (message.isLlmResponse && message.text.isNotBlank() && message.status != MessageStatus.SENDING) {
+                    Text(
+                        "~${approxTokenCount(message.text)} tokens",
+                        color = textColor.copy(alpha = 0.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                }
+
                 Row(
                     modifier = Modifier.align(Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End
                 ) {
+                    if (message.mediaUrl == null) {
+                        Box {
+                            Icon(
+                                Icons.Default.AddReaction,
+                                contentDescription = "Add reaction",
+                                tint = textColor.copy(alpha = 0.4f),
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { showReactionPicker = true }
+                            )
+                            if (showReactionPicker) {
+                                Popup(
+                                    alignment = Alignment.BottomEnd,
+                                    onDismissRequest = { showReactionPicker = false },
+                                    properties = PopupProperties(focusable = false)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        shadowElevation = 8.dp
+                                    ) {
+                                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                            listOf("👍", "❤️", "😂", "😮", "😢", "🙏").forEach { emoji ->
+                                                Text(
+                                                    emoji,
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    modifier = Modifier
+                                                        .clickable {
+                                                            onReact(message.id, emoji)
+                                                            showReactionPicker = false
+                                                        }
+                                                        .padding(6.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    if (message.isEdited) {
+                        Text(
+                            "edited",
+                            color = textColor.copy(alpha = 0.5f),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     Text(timeText, color = textColor.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall)
                     if (isOutgoing) {
                         Spacer(Modifier.width(4.dp))
@@ -895,6 +979,10 @@ private fun JsonContent(json: String) {
 }
 
 /** Whole message is (only) a valid JSON object/array — auto-render highlighted, no fence needed. */
+/** Rough token estimate (~4 chars/token, the common rule of thumb for English text) — good
+ *  enough for a "roughly how much this cost" hint, not meant to match a real tokenizer. */
+private fun approxTokenCount(text: String): Int = (text.length / 4).coerceAtLeast(1)
+
 private fun looksLikeWholeMessageJson(text: String): Boolean {
     val trimmed = text.trim()
     if (trimmed.length < 2) return false

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.TextFormat
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Lock
@@ -101,6 +102,7 @@ fun SettingsScreen(
     onUpdateLlmEndpoint: (String) -> Unit,
     onUpdateLlmApiKey: (String) -> Unit,
     onUpdateLlmModel: (String) -> Unit,
+    onUpdateLlmContextWindow: (Int) -> Unit,
     onUpdateBiometric: (Boolean) -> Unit,
     onUpdateLockTimeout: (Int) -> Unit,
     onUpdateThemeMode: (ThemeMode) -> Unit,
@@ -192,6 +194,7 @@ fun SettingsScreen(
                 onUpdateEndpoint = onUpdateLlmEndpoint,
                 onUpdateApiKey = onUpdateLlmApiKey,
                 onUpdateModel = onUpdateLlmModel,
+                onUpdateContextWindow = onUpdateLlmContextWindow,
                 onSave = { onSave(); currentPage = SettingsPage.Main },
                 onBack = { onSave(); currentPage = SettingsPage.Main }
             )
@@ -362,14 +365,15 @@ private fun MainPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // AI
+            // DANGER ZONE (LLM) — separated from regular settings because enabling it sends
+            // message content to a third-party API, outside the device's control.
             GlassCard(modifier = Modifier.padding(horizontal = 16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(modifier = Modifier.padding(4.dp)) {
-                    SectionLabel("AI Assistant")
+                    SectionLabel("Danger Zone")
                     SettingsNavRow(
-                        icon = Icons.Rounded.Psychology,
-                        title = "LLM Integration",
-                        subtitle = if (s.llmEnabled) s.llmModel else "Disabled",
+                        icon = Icons.Rounded.Warning,
+                        title = "Danger Zone",
+                        subtitle = if (s.llmEnabled) "AI assistant enabled — ${s.llmModel}" else "AI assistant disabled",
                         onClick = onLlmSettings
                     )
                 }
@@ -637,11 +641,25 @@ private fun LlmPage(
     onUpdateEndpoint: (String) -> Unit,
     onUpdateApiKey: (String) -> Unit,
     onUpdateModel: (String) -> Unit,
+    onUpdateContextWindow: (Int) -> Unit,
     onSave: () -> Unit,
     onBack: () -> Unit
 ) {
-    SubPageScaffold(title = "LLM Integration", onBack = onBack) { padding ->
+    val contextWindowOptions = listOf(0, 4, 10, 20, 40)
+    SubPageScaffold(title = "Danger Zone", onBack = onBack) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            GlassCard(containerColor = MaterialTheme.colorScheme.errorContainer) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Enabling the AI assistant sends your message content to the endpoint below, outside this device's control. Only turn it on for endpoints you trust.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
             GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -693,6 +711,25 @@ private fun LlmPage(
                             leadingIcon = { Icon(Icons.Rounded.Science, null, modifier = Modifier.size(20.dp)) },
                             shape = MaterialTheme.shapes.medium
                         )
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(16.dp))
+                        Text("Context window", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text(
+                            "How many previous messages are sent to the LLM as context alongside your new message.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            contextWindowOptions.forEach { size ->
+                                FilterChip(
+                                    selected = uiState.settings.llmContextWindowSize == size,
+                                    onClick = { onUpdateContextWindow(size) },
+                                    label = { Text(if (size == 0) "None" else "$size", style = MaterialTheme.typography.labelMedium) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
             }
