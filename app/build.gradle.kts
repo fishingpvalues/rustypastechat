@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -89,6 +90,15 @@ android {
         }
     }
 
+    testOptions {
+        unitTests {
+            // Ohne das findet Robolectric keine Themes/Strings und jeder
+            // Compose-Screenshot-Test scheitert beim Inflate.
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
+
     buildFeatures {
         compose = true
     }
@@ -152,4 +162,8 @@ dependencies {
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
+    testImplementation(libs.compose.ui.test.manifest)
 }

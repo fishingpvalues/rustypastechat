@@ -58,13 +58,47 @@ Entweder die Erwartung an das reale Verhalten anpassen oder den Test gegen
 MockWebServer statt gegen einen echten Endpunkt fahren — ein Integrationstest,
 der von einem fremden Dienst abhängt, ist per Definition flaky.
 
+### 4c. Die Application zieht beim Start eifrig den AndroidKeyStore hoch
+Gefunden beim Einrichten der Screenshot-Tests (2026-08-27), und der Befund ist
+groesser als das Testproblem, das ihn sichtbar gemacht hat:
+
+```
+java.security.KeyStoreException: AndroidKeyStore not found
+  at androidx.security.crypto.MasterKeys.getOrCreate
+  at com.rustypastechat.security.VaultCrypto.getMasterKey(VaultCrypto.kt:27)
+  at com.rustypastechat.security.SecurePreferences.<init>(SecurePreferences.kt:8)
+```
+
+Das passiert **schon beim Hochfahren der Application**, nicht erst beim ersten
+Zugriff — auch ein Test, der nur das Farbschema rendert, faellt darueber.
+
+Zwei Folgen:
+
+1. **Jeder Robolectric-Test ist blockiert**, nicht nur Screenshots. Der
+   AndroidKeyStore existiert auf der JVM nicht. Der Screenshot-Test umgeht das
+   derzeit mit `@Config(application = android.app.Application::class)` — das ist
+   ein Pflaster, kein Fix, und es umgeht damit auch Hilt.
+2. **Kaltstart kostet das echte Geraet Zeit.** Keystore-Operationen sind teuer.
+   Ein Master-Key wird im Normalfall beim ersten *Bedarf* gebraucht, nicht beim
+   Start — beim Entsperren, beim ersten Medienzugriff.
+
+Richtig waere lazy: `by lazy`, ein `Provider<SecurePreferences>` von Hilt, oder
+Initialisierung im ersten Coroutine-Scope, der sie tatsaechlich braucht. Danach
+kann das `application = ...` aus dem Test wieder raus und die echte Hilt-App
+laeuft auch unter Robolectric.
+
 ## P1 — SOTA-Lücken (Reihenfolge = Nutzen pro Aufwand)
 
-### 5. Roborazzi — headless Screenshot-Tests
-Löst direkt das Debug-Problem: rendert Composables auf der JVM zu PNG und
-vergleicht sie **numerisch**. Der Agent liest eine Zahl statt Bilder zu
-verschicken (mittwald: max. 5 Bilder pro Chat). Setzt auf dem schon
-vorhandenen Robolectric auf, kostet also wenig.
+### 5. Roborazzi — ERLEDIGT 2026-08-27
+Eingerichtet und verifiziert: Plugin 1.43.1, `testOptions.unitTests.
+isIncludeAndroidResources`, `ThemeScreenshotTest` erzeugt `theme_light.png` und
+`theme_dark.png` unter `app/src/test/screenshots/`. `recordRoborazziDebug` /
+`verifyRoborazziDebug` laufen headless auf potatostack.
+
+Offen bleibt: Snapshots der echten Komponenten (MessageBubble, ChatListScreen)
+— die haengen an Punkt 4c, weil sie ueber die Application den Keystore ziehen.
+Und `@Config(sdk = [34])` kann weg, sobald Robolectric >= 4.15 im Katalog steht
+(4.13 kann hoechstens API 34, die App hat targetSdk 36).
 
 ### 6. Baseline Profile + Macrobenchmark
 Fehlt beides. Baseline Profiles sind seit AGP 8 der Standardweg für
@@ -119,10 +153,11 @@ Entscheidung, kein Vergessen.
 Aus `SOTA_GAPS.md` übernommen. Sollte den Chat-Namen zeigen; das ist eine
 Produktentscheidung und kein Design-Detail.
 
-### 17. Dynamic Color ohne Ausweichpfad
-Auf API 31+ bedingungslos aktiv. Material You kann die Bubble- und
-Status-Farben (die semantisch belegt sind) überschreiben. Mindestens ein
-Schalter in den Einstellungen, besser die semantischen Farben davon ausnehmen.
+### 17. Dynamic Color — bereits geloest, Eintrag war veraltet
+`SOTA_GAPS.md` fuehrt das als offen. Der Code widerspricht: `Theme.kt:93` hat
+`dynamicColor: Boolean = false` mit begruendetem Kommentar ("would override the
+app's signature rust/copper identity"). Nichts zu tun; hier steht es nur, damit
+der veraltete Eintrag in SOTA_GAPS.md niemanden mehr in die Irre fuehrt.
 
 ### 18. Spacing-Tokens nicht durchgezogen
 `RustySpacing` existiert in `ui/theme/Shape.kt`, die Screens nutzen weiter
