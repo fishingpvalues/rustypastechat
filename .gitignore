@@ -18,3 +18,7 @@ captures/
 
 # Kotlin build artefacts
 .kotlin/
+
+# Local-only credentials and agent scratch
+local-potato.env
+.pi/
