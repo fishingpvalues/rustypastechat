@@ -15,3 +15,6 @@ captures/
 *.hprof
 .DS_Store
 .env.test
+
+# Kotlin build artefacts
+.kotlin/
