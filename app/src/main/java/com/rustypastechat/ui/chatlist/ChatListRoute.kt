@@ -22,9 +22,17 @@ fun ChatListRoute(
         onRenameChat = viewModel::renameChat,
         onSetCategory = viewModel::setChatCategory,
         onDeleteChat = viewModel::deleteChat,
+        onToggleArchived = viewModel::toggleArchived,
+        onToggleMuted = viewModel::toggleMuted,
+        onSetShowArchived = viewModel::setShowArchived,
         onRefresh = viewModel::loadChats,
         onImportWhatsAppChat = viewModel::importWhatsAppChat,
-        onChatClick = onChatClick,
+        onChatClick = { chatId ->
+            // Opening a chat clears its badge and any notification still in
+            // the shade, so the two never disagree.
+            viewModel.markChatRead(chatId)
+            onChatClick(chatId)
+        },
         onSettings = onSettings
     )
 }

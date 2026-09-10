@@ -45,6 +45,9 @@ class PreferencesManager @Inject constructor(
         private val KEY_VOICE_QUALITY = stringPreferencesKey("voice_quality")
         private val KEY_IMAGE_QUALITY = stringPreferencesKey("image_quality")
         private val KEY_ENCRYPT_MEDIA_CACHE = booleanPreferencesKey("encrypt_media_cache")
+        private val KEY_BACKGROUND_SYNC = booleanPreferencesKey("background_sync_enabled")
+        private val KEY_SYNC_INTERVAL = androidx.datastore.preferences.core.intPreferencesKey("sync_interval_minutes")
+        private val KEY_SFTP_FINGERPRINT = stringPreferencesKey("sftp_fingerprint")
     }
 
     private val securePrefs = SecurePreferences(context)
@@ -68,7 +71,10 @@ class PreferencesManager @Inject constructor(
             markdownEnabled = prefs[KEY_MARKDOWN_ENABLED] ?: true,
             voiceQuality = try { VoiceQuality.valueOf(prefs[KEY_VOICE_QUALITY] ?: "STANDARD") } catch (_: Exception) { VoiceQuality.STANDARD },
             imageQuality = try { ImageQuality.valueOf(prefs[KEY_IMAGE_QUALITY] ?: "STANDARD") } catch (_: Exception) { ImageQuality.STANDARD },
-            encryptMediaCache = prefs[KEY_ENCRYPT_MEDIA_CACHE] ?: true
+            encryptMediaCache = prefs[KEY_ENCRYPT_MEDIA_CACHE] ?: true,
+            backgroundSyncEnabled = prefs[KEY_BACKGROUND_SYNC] ?: false,
+            syncIntervalMinutes = prefs[KEY_SYNC_INTERVAL] ?: 15,
+            sftpFingerprint = prefs[KEY_SFTP_FINGERPRINT] ?: ""
         )
     }
 
@@ -130,7 +136,29 @@ class PreferencesManager @Inject constructor(
         }
     }
 
+    /**
+     * Secrets are written BEFORE the DataStore edit, and the order is
+     * load-bearing.
+     *
+     * `settingsFlow` maps over `dataStore.data` and reads the auth token and
+     * the LLM key out of [SecurePreferences] inside that map. Those two
+     * stores emit independently: only the DataStore write wakes the flow.
+     * With the DataStore edit first, the emission it triggers ran while
+     * SecurePreferences still held the OLD values, so SettingsViewModel's
+     * in-memory copy came back with an empty `authToken` immediately after
+     * the user had saved one - and the next save of ANY unrelated setting
+     * then wrote that empty string back over the real token. Observed on the
+     * emulator against the live server: the field went blank right after
+     * Save while requests kept authenticating, which is the same bug seen
+     * from the other side.
+     */
     suspend fun saveSettings(settings: AppSettings) {
+        securePrefs.apply {
+            authToken = settings.authToken
+            llmApiKey = settings.llmApiKey
+            biometricEnabled = settings.biometricEnabled
+            lockTimeoutSeconds = settings.lockTimeoutSeconds
+        }
         context.dataStore.edit { prefs ->
             prefs[KEY_PASTE_SERVER_URL] = settings.pasteServerUrl
             prefs[KEY_LLM_ENABLED] = settings.llmEnabled
@@ -144,12 +172,9 @@ class PreferencesManager @Inject constructor(
             prefs[KEY_VOICE_QUALITY] = settings.voiceQuality.name
             prefs[KEY_IMAGE_QUALITY] = settings.imageQuality.name
             prefs[KEY_ENCRYPT_MEDIA_CACHE] = settings.encryptMediaCache
-        }
-        securePrefs.apply {
-            authToken = settings.authToken
-            llmApiKey = settings.llmApiKey
-            biometricEnabled = settings.biometricEnabled
-            lockTimeoutSeconds = settings.lockTimeoutSeconds
+            prefs[KEY_BACKGROUND_SYNC] = settings.backgroundSyncEnabled
+            prefs[KEY_SYNC_INTERVAL] = settings.syncIntervalMinutes
+            prefs[KEY_SFTP_FINGERPRINT] = settings.sftpFingerprint
         }
     }
 }

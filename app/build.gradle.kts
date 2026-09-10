@@ -23,7 +23,7 @@ android {
         // to bump it by hand — the Play Store rejects a re-upload with a stale versionCode.
         // versionName still needs a manual bump per feature/fix release.
         versionCode = System.getenv("RUSTYPASTECHAT_VERSION_CODE")?.toIntOrNull() ?: 2
-        versionName = "1.1.0"
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -82,11 +82,13 @@ android {
     }
 
     packaging {
-        jniLibs {
-            pickFirsts.add("**/libjsch*.so")
-        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,NOTICE.md}"
+            // jsch and jspecify both ship an OSGi manifest at the same
+            // multi-release path. This is the whole "JSch has META-INF
+            // conflicts" that the SFTP feature was abandoned over; it is one
+            // excluded metadata file, not a real packaging problem.
+            excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
 
@@ -101,6 +103,10 @@ android {
 
     buildFeatures {
         compose = true
+        // The About page used to print a hardcoded "Version 1.0.0" while
+        // versionName was 1.1.0 - a string nobody remembers to bump, in the
+        // one place a user looks to report which build they are on.
+        buildConfig = true
     }
 }
 
@@ -139,8 +145,14 @@ dependencies {
     implementation(libs.security.crypto)
     implementation(libs.biometric.ktx)
 
-    // SFTP backup
-    // implementation(libs.jsch) // JSch has META-INF conflicts
+    // SFTP backup. See the catalog comment: this is the maintained fork, not
+    // com.jcraft:jsch, and it has no native library to collide over.
+    implementation(libs.jsch)
+
+    // Background sync + local notifications
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
 
     // Image processing
     implementation(libs.exifinterface)
@@ -166,4 +178,5 @@ dependencies {
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
     testImplementation(libs.compose.ui.test.manifest)
+    testImplementation(libs.androidx.work.testing)
 }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Notification small icon: the RustyMark silhouette (note with a folded
+    corner + speech-bubble tail), same shape as the launcher icon and
+    RustyMark.kt, so a notification is recognisably this app rather than a
+    generic bell.
+
+    Android renders a small icon as an alpha mask and tints it, so this must
+    be one flat white shape. The three content lines are punched out with
+    evenOdd rather than drawn in a second colour, which would disappear once
+    the system flattens the icon.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M38.81,27 L67.5,27 L81,40.5 L81,69.19 C81,75.9 75.56,81 69.19,81 L38.81,81 C32.1,81 27,75.9 27,69.19 L27,38.81 C27,32.1 32.1,27 38.81,27 Z M35.44,45.56 L65.82,45.56 L65.82,48.94 L35.44,48.94 Z M35.44,53.16 L57.38,53.16 L57.38,56.54 L35.44,56.54 Z M35.44,60.75 L50.63,60.75 L50.63,64.13 L35.44,64.13 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M27,72.56 L27,85.22 C27,86.17 28.31,86.08 28.81,86.08 L36.28,79.31 L27,79.31 Z" />
+</vector>

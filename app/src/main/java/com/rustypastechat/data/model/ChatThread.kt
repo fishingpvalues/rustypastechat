@@ -21,7 +21,10 @@ data class ChatThread(
     val lastTimestamp: Long = 0L,
     val messageCount: Int = 0,
     val unreadCount: Int = 0,
-    val isActive: Boolean = true,
+    /** Archived chats live in their own collapsed section and never notify. */
+    val isArchived: Boolean = false,
+    /** Muted chats still appear in the list; they just never fire a notification. */
+    val isMuted: Boolean = false,
     val category: ChatCategory = ChatCategory.GENERAL,
     val avatarColor: Long = 0xFF1A73E8
 ) {

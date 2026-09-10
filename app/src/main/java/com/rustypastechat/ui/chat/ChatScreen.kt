@@ -58,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -314,6 +315,12 @@ fun ChatScreen(
     }
 
     Scaffold(
+        // enableEdgeToEdge() is on in MainActivity, and with it
+        // windowSoftInputMode="adjustResize" no longer resizes anything - the
+        // app owns its insets. Without imePadding the keyboard covered the
+        // composer completely: you could not see the message you were
+        // typing, which is the single most-used control in the app.
+        modifier = Modifier.imePadding(),
         topBar = {
             when {
                 uiState.isSearchMode -> {
@@ -378,8 +385,10 @@ fun ChatScreen(
                         title = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    "RustyPaste Chat",
+                                    uiState.chatName,
                                     style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.semantics { heading() }
                                 )
                                 AnimatedVisibility(visible = uiState.isLlmTyping) {

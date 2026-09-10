@@ -6,6 +6,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rustypastechat.data.local.ChatMetadataStore
 import com.rustypastechat.data.local.PreferencesManager
 import com.rustypastechat.data.model.AppSettings
 import com.rustypastechat.data.model.LlmMessage
@@ -57,13 +58,16 @@ data class ChatUiState(
     val forwardChatOptions: List<Pair<String, String>> = emptyList(),
     val hasMoreHistory: Boolean = false,
     val isLoadingMoreHistory: Boolean = false,
-    val activeThreadRootId: String? = null
+    val activeThreadRootId: String? = null,
+    /** Display name of the open chat, for the top bar. */
+    val chatName: String = "RustyPaste Chat"
 )
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val preferencesManager: PreferencesManager,
+    private val chatMetadataStore: ChatMetadataStore,
     private val pasteRepository: PasteRepository,
     private val llmRepository: LlmRepository,
     private val imageProcessor: ImageProcessor,
@@ -114,6 +118,50 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /** Puts the chat's own name in the top bar. It read a constant
+     *  "RustyPaste Chat" on every chat, which makes two chats look identical
+     *  and is the one label that tells you which conversation you are in. */
+    private fun refreshChatName() {
+        val chatId = currentChatId
+        viewModelScope.launch {
+            val stored = chatMetadataStore.get(chatId).name
+            val name = stored ?: if (chatId == Message.DEFAULT_CHAT) "General" else "Chat $chatId"
+            if (currentChatId == chatId) {
+                _uiState.update { it.copy(chatName = name) }
+            }
+        }
+    }
+
+    /**
+     * Records every message now on screen as seen, which is what clears the
+     * chat's unread badge.
+     *
+     * By id, not by timestamp: a legacy paste has no time anywhere (the
+     * filename carries none and this server answers `creation_date_utc:
+     * null`), so the repository stamps it `System.currentTimeMillis()` on
+     * every load. A timestamp marker is therefore stale one refresh later -
+     * measured against the live server, the badge went 30 to 31 across
+     * opening the chat instead of to 0.
+     */
+    private fun markCurrentChatRead(messages: List<Message>) {
+        val chatId = currentChatId
+        if (messages.isEmpty()) return
+        val ids = messages.map { it.id }.toSet()
+        val newest = messages.maxOf { it.timestamp }
+        viewModelScope.launch {
+            chatMetadataStore.update(chatId) {
+                it.copy(
+                    // Union, not replace: loadChatHistory returns one PAGE,
+                    // so replacing would forget older messages the user has
+                    // already scrolled through and re-raise the badge.
+                    readIds = it.readIds + ids,
+                    notifiedIds = it.notifiedIds - ids,
+                    lastReadTimestamp = maxOf(it.lastReadTimestamp, newest)
+                )
+            }
+        }
+    }
+
     fun loadChatHistory() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, error = OneTimeEvent(null)) }
@@ -127,6 +175,12 @@ class ChatViewModel @Inject constructor(
                             isLoading = false, hasMoreHistory = page.hasMore
                         )
                     }
+                    // Opening a chat is what "reading" it means here: the
+                    // chat-list badge and the background-sync notifier both
+                    // key off this marker, so it has to be written from the
+                    // screen that actually shows the messages.
+                    markCurrentChatRead(page.messages)
+                    refreshChatName()
                 }
                 .onFailure { e ->
                     _uiState.update {

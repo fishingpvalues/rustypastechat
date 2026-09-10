@@ -34,5 +34,11 @@ data class AppSettings(
     val markdownEnabled: Boolean = true,
     val voiceQuality: VoiceQuality = VoiceQuality.STANDARD,
     val imageQuality: ImageQuality = ImageQuality.STANDARD,
-    val encryptMediaCache: Boolean = true
+    val encryptMediaCache: Boolean = true,
+    /** Periodic WorkManager poll of the paste listing + a local notification per new message. */
+    val backgroundSyncEnabled: Boolean = false,
+    /** Minutes between polls. WorkManager's floor for periodic work is 15. */
+    val syncIntervalMinutes: Int = 15,
+    /** SFTP backup target. The fingerprint is the pinned host key; without it uploads refuse. */
+    val sftpFingerprint: String = ""
 )

@@ -35,6 +35,10 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Delete
@@ -68,6 +72,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -99,6 +104,9 @@ fun ChatListScreen(
     onRenameChat: (String, String) -> Unit,
     onSetCategory: (String, ChatCategory) -> Unit,
     onDeleteChat: (String) -> Unit,
+    onToggleArchived: (String) -> Unit,
+    onToggleMuted: (String) -> Unit,
+    onSetShowArchived: (Boolean) -> Unit,
     onRefresh: () -> Unit,
     onImportWhatsAppChat: (android.net.Uri, String) -> Unit,
     onChatClick: (String) -> Unit,
@@ -310,7 +318,7 @@ fun ChatListScreen(
                         }
                     }
                 }
-                state.chats.isEmpty() && !state.isLoading -> {
+                state.chats.isEmpty() && state.archivedChats.isEmpty() && !state.isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             RustyMark(
@@ -333,6 +341,42 @@ fun ChatListScreen(
                                 onClick = { onChatClick(chat.id) },
                                 onLongClick = { showDetailDialog = chat }
                             )
+                        }
+                        // Archived chats sit below the live ones behind one
+                        // tap, the way every mail and chat client puts them:
+                        // out of the way, not out of reach.
+                        if (state.archivedChats.isNotEmpty()) {
+                            item(key = "archived-header") {
+                                ListItem(
+                                    headlineContent = {
+                                        Text(
+                                            "Archived (${state.archivedChats.size})",
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    },
+                                    leadingContent = {
+                                        Icon(Icons.Rounded.Archive, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    },
+                                    trailingContent = {
+                                        Icon(
+                                            Icons.Rounded.ArrowDropDown,
+                                            contentDescription = if (state.showArchived) "Collapse archived" else "Expand archived",
+                                            modifier = Modifier.rotate(if (state.showArchived) 180f else 0f)
+                                        )
+                                    },
+                                    modifier = Modifier.clickable { onSetShowArchived(!state.showArchived) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+                            }
+                            if (state.showArchived) {
+                                items(state.archivedChats, key = { "archived-${it.id}" }) { chat ->
+                                    ChatListItem(
+                                        chat = chat,
+                                        onClick = { onChatClick(chat.id) },
+                                        onLongClick = { showDetailDialog = chat }
+                                    )
+                                }
+                            }
                         }
                         item { Spacer(Modifier.height(80.dp)) }
                     }
@@ -357,6 +401,8 @@ fun ChatListScreen(
         ChatDetailDialog(
             chat = chat,
             onDismiss = { showDetailDialog = null },
+            onToggleArchived = { onToggleArchived(chat.id); showDetailDialog = null },
+            onToggleMuted = { onToggleMuted(chat.id); showDetailDialog = null },
             onRename = { newName -> onRenameChat(chat.id, newName); showDetailDialog = null },
             onSetCategory = { cat -> onSetCategory(chat.id, cat); showDetailDialog = null },
             onDelete = { showDeleteConfirm = chat.id; showDetailDialog = null }
@@ -581,7 +627,9 @@ private fun ChatDetailDialog(
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
     onSetCategory: (ChatCategory) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleArchived: () -> Unit,
+    onToggleMuted: () -> Unit
 ) {
     var showRename by remember { mutableStateOf(false) }
     var showCategory by remember { mutableStateOf(false) }
@@ -652,6 +700,48 @@ private fun ChatDetailDialog(
                         shape = MaterialTheme.shapes.medium
                     )
                 }
+
+                HorizontalDivider()
+
+                ListItem(
+                    headlineContent = { Text(if (chat.isMuted) "Unmute" else "Mute") },
+                    supportingContent = {
+                        Text(
+                            if (chat.isMuted) "Notifications are off for this chat"
+                            else "Stop background sync notifying about this chat"
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            if (chat.isMuted) Icons.Rounded.NotificationsOff else Icons.Rounded.Notifications,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    modifier = Modifier.clickable { onToggleMuted() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+
+                HorizontalDivider()
+
+                ListItem(
+                    headlineContent = { Text(if (chat.isArchived) "Unarchive" else "Archive") },
+                    supportingContent = {
+                        Text(
+                            if (chat.isArchived) "Move back into the main list"
+                            else "Hide from the main list; it keeps its messages and never notifies"
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            if (chat.isArchived) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    modifier = Modifier.clickable { onToggleArchived() },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
 
                 HorizontalDivider()
 

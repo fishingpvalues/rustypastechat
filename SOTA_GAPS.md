@@ -1,4 +1,42 @@
-# SOTA Gap Analysis — rustypastechat vs. melanoscan
+# SOTA Gap Analysis - rustypastechat vs. melanoscan
+
+> **2026-09-10 update.** Closed since this document was written, each verified on
+> the emulator against the live potatostack rustypaste instance (see the E2E
+> screenshots in that session):
+>
+> - **Chat metadata is persisted.** Rename, category, colour, archive and mute
+>   lived in a `mutableListOf<ChatThread>` inside `ChatListViewModel`, i.e. in
+>   process memory: renaming a chat survived exactly until the next process
+>   death, and `deleteChat` only hid the chat until the next `loadChats()`
+>   re-derived it from the file listing. `ChatMetadataStore` (DataStore + JSON)
+>   owns it now, and delete really deletes the pastes - falling back to a hidden
+>   flag, with a message saying so, when the server has no delete token.
+> - **`unreadCount` is computed.** It was rendered as a badge that nothing ever
+>   set above zero. It cannot key on a timestamp here: a legacy paste carries no
+>   time anywhere (the filename has none and this server answers
+>   `creation_date_utc: null`), so the repository stamps it `currentTimeMillis()`
+>   on every load - the badge went 30 to 31 across opening the chat. It keys on
+>   message ids.
+> - **Archive and mute exist.** `ChatThread.isActive` was a dead field. It is now
+>   `isArchived` / `isMuted`, with a collapsed "Archived (n)" section in the list
+>   and both honoured by the notifier.
+> - **Background sync and local notifications.** WorkManager + `@HiltWorker`
+>   poll, diff the listing and raise one grouped notification per chat, with a
+>   settings page for the interval and the runtime POST_NOTIFICATIONS request.
+> - **SFTP export actually uploads.** It was a stub that returned failure
+>   unconditionally - a button that always failed. Implemented on the maintained
+>   `com.github.mwiede:jsch` fork, with host-key PINNING: an upload refuses until
+>   a fingerprint is saved, and "Fetch host key" reports the server's SHA256 in
+>   OpenSSH's own format so it can be checked out of band.
+> - **The composer is no longer hidden by the keyboard.** `enableEdgeToEdge()`
+>   makes `adjustResize` a no-op; the Scaffold needed `imePadding()`.
+> - **The chat top bar shows the chat name**, not the constant "RustyPaste Chat".
+> - **The auth token is masked** (it was rendered in clear) and no longer lost:
+>   `saveSettings` wrote DataStore before SecurePreferences, so the emission it
+>   triggered read the OLD secret back into the in-memory settings - and the next
+>   save of any unrelated setting wrote that empty string over the real token.
+> - **The About page reads its version from BuildConfig**; it was a hardcoded
+>   "1.0.0" while `versionName` was 1.1.0.
 
 **Status: items 1-4 below (identity, animation, tokens, accessibility) plus the Settings
 back-button fix, avatar/typing-indicator dedup, illustrated empty state, branded splash, tablet

@@ -24,4 +24,8 @@
     <string name="gallery">Gallery</string>
     <string name="retry">Retry</string>
     <string name="delete">Delete</string>
+    <string name="notification_channel_messages">New messages</string>
+    <string name="notification_channel_messages_desc">Fires when a background sync finds pastes this device did not write.</string>
+    <string name="notification_summary_title">New messages</string>
+    <string name="notification_new_paste">New paste</string>
 </resources>

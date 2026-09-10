@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhonelinkSetup
 import androidx.compose.material.icons.rounded.Psychology
@@ -43,6 +44,8 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.TextFormat
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.HighQuality
@@ -76,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.rustypastechat.data.model.ThemeMode
 import com.rustypastechat.ui.components.GlassCard
@@ -87,8 +91,9 @@ private sealed class SettingsPage(val ordinal: Int) {
     object Llm : SettingsPage(3)
     object Security : SettingsPage(4)
     object Storage : SettingsPage(5)
-    object Tools : SettingsPage(6)
-    object About : SettingsPage(7)
+    object Notifications : SettingsPage(6)
+    object Tools : SettingsPage(7)
+    object About : SettingsPage(8)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,6 +132,11 @@ fun SettingsScreen(
     onUpdateSftpUser: (String) -> Unit,
     onUpdateSftpPassword: (String) -> Unit,
     onUpdateSftpPath: (String) -> Unit,
+    onProbeSftpHostKey: () -> Unit,
+    onPinSftpFingerprint: (String) -> Unit,
+    onClearSftpFingerprint: () -> Unit,
+    onUpdateBackgroundSync: (Boolean) -> Unit,
+    onUpdateSyncInterval: (Int) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
@@ -164,6 +174,7 @@ fun SettingsScreen(
                 onLlmSettings = { currentPage = SettingsPage.Llm },
                 onSecuritySettings = { currentPage = SettingsPage.Security },
                 onStorageSettings = { currentPage = SettingsPage.Storage },
+                onNotificationSettings = { currentPage = SettingsPage.Notifications },
                 onToolsSettings = { currentPage = SettingsPage.Tools },
                 onAbout = { currentPage = SettingsPage.About },
                 uiState = uiState
@@ -220,9 +231,18 @@ fun SettingsScreen(
                 onUpdateSftpUser = onUpdateSftpUser,
                 onUpdateSftpPassword = onUpdateSftpPassword,
                 onUpdateSftpPath = onUpdateSftpPath,
+                onProbeSftpHostKey = onProbeSftpHostKey,
+                onPinSftpFingerprint = onPinSftpFingerprint,
+                onClearSftpFingerprint = onClearSftpFingerprint,
                 onUpdateVoiceQuality = onUpdateVoiceQuality,
                 onUpdateImageQuality = onUpdateImageQuality,
                 onUpdateEncryptMediaCache = onUpdateEncryptMediaCache,
+                onBack = { currentPage = SettingsPage.Main }
+            )
+            SettingsPage.Notifications -> NotificationsPage(
+                uiState = uiState,
+                onUpdateBackgroundSync = onUpdateBackgroundSync,
+                onUpdateSyncInterval = onUpdateSyncInterval,
                 onBack = { currentPage = SettingsPage.Main }
             )
             SettingsPage.Tools -> com.rustypastechat.ui.tools.ToolsPage(
@@ -305,6 +325,7 @@ private fun MainPage(
     onLlmSettings: () -> Unit,
     onSecuritySettings: () -> Unit,
     onStorageSettings: () -> Unit,
+    onNotificationSettings: () -> Unit,
     onToolsSettings: () -> Unit,
     onAbout: () -> Unit,
     uiState: SettingsUiState
@@ -411,6 +432,25 @@ private fun MainPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // NOTIFICATIONS
+            GlassCard(modifier = Modifier.padding(horizontal = 16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(4.dp)) {
+                    SectionLabel("Notifications")
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Notifications,
+                        title = "Background sync",
+                        subtitle = if (s.backgroundSyncEnabled) {
+                            "On, every ${s.syncIntervalMinutes} min"
+                        } else {
+                            "Off - new pastes only appear on refresh"
+                        },
+                        onClick = onNotificationSettings
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // TOOLS
             GlassCard(modifier = Modifier.padding(horizontal = 16.dp), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(modifier = Modifier.padding(4.dp)) {
@@ -433,7 +473,7 @@ private fun MainPage(
                     SettingsNavRow(
                         icon = Icons.Rounded.Info,
                         title = "About RustyPaste Chat",
-                        subtitle = "Version 1.0.0",
+                        subtitle = "Version ${com.rustypastechat.BuildConfig.VERSION_NAME}",
                         onClick = onAbout
                     )
                 }
@@ -579,6 +619,8 @@ private fun ServerPage(
     onSave: () -> Unit,
     onBack: () -> Unit
 ) {
+    var tokenVisible by remember { mutableStateOf(false) }
+
     SubPageScaffold(title = "Paste Server", onBack = onBack) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
             GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
@@ -600,6 +642,17 @@ private fun ServerPage(
                         value = uiState.settings.authToken,
                         onValueChange = onUpdateToken,
                         label = { Text("Auth Token") },
+                        // A bearer token is a credential and was rendered in
+                        // clear on a screen people take screenshots of.
+                        visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { tokenVisible = !tokenVisible }) {
+                                Icon(
+                                    if (tokenVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = if (tokenVisible) "Hide auth token" else "Show auth token"
+                                )
+                            }
+                        },
                         placeholder = { Text("Optional") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -813,6 +866,9 @@ private fun StoragePage(
     onUpdateSftpUser: (String) -> Unit,
     onUpdateSftpPassword: (String) -> Unit,
     onUpdateSftpPath: (String) -> Unit,
+    onProbeSftpHostKey: () -> Unit,
+    onPinSftpFingerprint: (String) -> Unit,
+    onClearSftpFingerprint: () -> Unit,
     onUpdateVoiceQuality: (com.rustypastechat.data.model.VoiceQuality) -> Unit,
     onUpdateImageQuality: (com.rustypastechat.data.model.ImageQuality) -> Unit,
     onUpdateEncryptMediaCache: (Boolean) -> Unit,
@@ -983,6 +1039,62 @@ private fun StoragePage(
                         modifier = Modifier.fillMaxWidth(), singleLine = true,
                         shape = MaterialTheme.shapes.medium
                     )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                    // Host key pinning. An upload refuses without a pinned
+                    // fingerprint, because disabling host-key checking would
+                    // hand the whole encrypted chat backup to whatever answers
+                    // on that host:port.
+                    val pinnedFingerprint = uiState.settings.sftpFingerprint
+                    ListItem(
+                        headlineContent = {
+                            Text("Host key", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        },
+                        supportingContent = {
+                            Text(
+                                if (pinnedFingerprint.isBlank()) "Not pinned - uploads are blocked" else pinnedFingerprint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (pinnedFingerprint.isBlank()) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        leadingContent = {
+                            Icon(
+                                Icons.Rounded.Key, null,
+                                tint = if (pinnedFingerprint.isBlank()) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        FilledTonalButton(
+                            onClick = onProbeSftpHostKey, modifier = Modifier.weight(1f),
+                            enabled = !uiState.sftpTesting
+                        ) { Text("Fetch host key") }
+                        if (pinnedFingerprint.isNotBlank()) {
+                            TextButton(onClick = onClearSftpFingerprint, modifier = Modifier.weight(1f)) {
+                                Text("Unpin")
+                            }
+                        }
+                    }
+                    uiState.sftpOfferedFingerprint?.let { offered ->
+                        if (offered != pinnedFingerprint) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Verify this against the server before trusting it:\nssh-keyscan -p ${uiState.sftpPort.ifBlank { "22" }} ${uiState.sftpHost} | ssh-keygen -lf -",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            FilledTonalButton(
+                                onClick = { onPinSftpFingerprint(offered) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Pin $offered") }
+                        }
+                    }
+
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         FilledTonalButton(
@@ -991,7 +1103,7 @@ private fun StoragePage(
                         ) { Text("Test") }
                         FilledTonalButton(
                             onClick = { onExportSftp(emptyList()) }, modifier = Modifier.weight(1f),
-                            enabled = !uiState.sftpTesting
+                            enabled = !uiState.sftpTesting && pinnedFingerprint.isNotBlank()
                         ) { Text("Upload Backup") }
                     }
                     uiState.sftpResult?.let {
@@ -1074,7 +1186,11 @@ private fun AboutPage(onBack: () -> Unit) {
                     Spacer(Modifier.height(12.dp))
                     Text("RustyPaste Chat", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(4.dp))
-                    Text("Version 1.0.0", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Version ${com.rustypastechat.BuildConfig.VERSION_NAME} (${com.rustypastechat.BuildConfig.VERSION_CODE})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(Modifier.height(16.dp))
                     Text(
                         "A lightweight chat app for your rustypaste instance. Upload text and media as paste notes, chat with an AI assistant via OpenAI-compatible endpoints.",
@@ -1142,3 +1258,135 @@ private fun truncateUrl(url: String): String {
     val stripped = url.removePrefix("https://").removePrefix("http://").trimEnd('/')
     return if (stripped.length > 32) stripped.take(29) + "..." else stripped
 }
+
+/**
+ * Background sync + local notifications.
+ *
+ * rustypaste has no push channel, so "new message" can only mean "a periodic
+ * poll diffed the file listing and found one". The interval is therefore a
+ * real user-facing trade-off (battery against latency) rather than an
+ * implementation detail, and WorkManager's 15-minute floor for periodic work
+ * is stated rather than silently applied.
+ */
+@Composable
+private fun NotificationsPage(
+    uiState: SettingsUiState,
+    onUpdateBackgroundSync: (Boolean) -> Unit,
+    onUpdateSyncInterval: (Int) -> Unit,
+    onBack: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var permissionGranted by remember { mutableStateOf(notificationsAllowed(context)) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        permissionGranted = granted
+        // Enabling sync without the permission would poll the network and
+        // then drop every notification on the floor, which reads as "the
+        // feature is broken". Only turn it on once the OS agreed.
+        if (granted) onUpdateBackgroundSync(true)
+    }
+
+    SubPageScaffold(title = "Notifications", onBack = onBack) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding)
+                .verticalScroll(rememberScrollState()).padding(16.dp)
+        ) {
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SectionLabel("Background sync")
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Notifications, null,
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Notify me about new pastes", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "Polls the server in the background and raises a notification for messages this device did not write.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.settings.backgroundSyncEnabled,
+                            onCheckedChange = { wanted ->
+                                if (!wanted) {
+                                    onUpdateBackgroundSync(false)
+                                } else if (permissionGranted) {
+                                    onUpdateBackgroundSync(true)
+                                } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                    permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    onUpdateBackgroundSync(true)
+                                }
+                            }
+                        )
+                    }
+
+                    if (uiState.settings.backgroundSyncEnabled && !permissionGranted) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Notifications are blocked for this app in Android settings, so sync will run but stay silent.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                    Text("Check every", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf(15, 30, 60, 180).forEach { minutes ->
+                            FilterChip(
+                                selected = uiState.settings.syncIntervalMinutes == minutes,
+                                onClick = { onUpdateSyncInterval(minutes) },
+                                enabled = uiState.settings.backgroundSyncEnabled,
+                                label = {
+                                    Text(
+                                        if (minutes < 60) "$minutes min" else "${minutes / 60} h",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Android will not run periodic work more often than every 15 minutes, and may delay it further to save battery.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            GlassCard(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SectionLabel("Per chat")
+                    Text(
+                        "Mute or archive an individual chat from its entry in the chat list - archived and muted chats never notify.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun notificationsAllowed(context: android.content.Context): Boolean =
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.POST_NOTIFICATIONS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    } else {
+        androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }

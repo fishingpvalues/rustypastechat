@@ -26,6 +26,30 @@ product goal.
 
 ---
 
+## 2026-09-10: Tier 1 is closed
+
+Every row in the table below has been addressed, and the two that were still
+open on 2026-09-10 were fixed in that pass and verified on the emulator against
+the live potatostack instance:
+
+| was broken | now |
+|---|---|
+| Formatting toolbar inserted literal `**bold**` | `RichTextContent` parses it; verified on-device |
+| Forward copied text into your own composer | real chat picker, re-uploads under the target prefix |
+| Oneshot was a label | client-side burn plus `viewedOneshotIds` |
+| `expiresAt` never checked | enforced client-side |
+| **`unreadCount` always 0** | computed from per-chat read markers, keyed on message id |
+| **`isActive` dead** | `isArchived` / `isMuted`, with an Archived section and mute honoured by the notifier |
+| **SFTP export always failed** | real upload on `com.github.mwiede:jsch`, with host-key pinning |
+| `MessageStatus.READ` never assigned | assigned |
+
+Tier 2 item 6 (background sync + local notifications), previously called "the
+highest-leverage architectural investment short of Tier 3", is also done:
+WorkManager + `@HiltWorker`, one grouped notification per chat, archived and
+muted chats excluded, interval configurable in Settings > Notifications.
+
+---
+
 ## Tier 1 — Broken or dead features (fix first, these actively mislead users)
 
 | Feature | Problem |

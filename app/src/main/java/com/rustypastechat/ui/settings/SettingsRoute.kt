@@ -48,6 +48,11 @@ fun SettingsRoute(
         onUpdateSftpUser = viewModel::updateSftpUser,
         onUpdateSftpPassword = viewModel::updateSftpPassword,
         onUpdateSftpPath = viewModel::updateSftpPath,
+        onProbeSftpHostKey = viewModel::probeSftpHostKey,
+        onPinSftpFingerprint = viewModel::pinSftpFingerprint,
+        onClearSftpFingerprint = viewModel::clearSftpFingerprint,
+        onUpdateBackgroundSync = viewModel::updateBackgroundSync,
+        onUpdateSyncInterval = viewModel::updateSyncInterval,
         onNavigateBack = onNavigateBack
     )
 }

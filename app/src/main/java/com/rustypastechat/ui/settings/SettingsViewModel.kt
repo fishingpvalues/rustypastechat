@@ -38,6 +38,8 @@ data class SettingsUiState(
     val sftpPath: String = "/",
     val sftpTesting: Boolean = false,
     val sftpResult: String? = null,
+    /** Fingerprint the server offered on the last probe, awaiting the user's decision. */
+    val sftpOfferedFingerprint: String? = null,
     val backupFiles: List<java.io.File> = emptyList(),
     val error: OneTimeEvent<String?> = OneTimeEvent(null)
 )
@@ -215,7 +217,8 @@ class SettingsViewModel @Inject constructor(
                     val config = SftpConfig(
                         host = host, port = port, username = user,
                         password = _uiState.value.sftpPassword,
-                        remotePath = _uiState.value.sftpPath.ifBlank { "/" }
+                        remotePath = _uiState.value.sftpPath.ifBlank { "/" },
+                        fingerprint = _uiState.value.settings.sftpFingerprint
                     )
                     sftpUploader.upload(backupFile, config) { progress ->
                         _uiState.update { it.copy(sftpResult = progress) }
@@ -244,12 +247,91 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(sftpTesting = true, sftpResult = "Testing..." ) }
             val config = SftpConfig(
                 host = host, port = port, username = user,
-                password = _uiState.value.sftpPassword
+                password = _uiState.value.sftpPassword,
+                remotePath = _uiState.value.sftpPath.ifBlank { "/" },
+                fingerprint = _uiState.value.settings.sftpFingerprint
             )
             sftpUploader.testConnection(config)
                 .onSuccess { msg -> _uiState.update { state -> state.copy(sftpTesting = false, sftpResult = msg) } }
                 .onFailure { e -> _uiState.update { state -> state.copy(sftpTesting = false, sftpResult = "SFTP error: ${e.message}") } }
         }
+    }
+
+    /**
+     * Reads the server's host key without transferring anything, so the user
+     * has a fingerprint to compare against `ssh-keyscan | ssh-keygen -lf -`
+     * before pinning it. Uploads refuse until a fingerprint is pinned - see
+     * [com.rustypastechat.data.backup.SftpUploader].
+     */
+    fun probeSftpHostKey() {
+        val host = _uiState.value.sftpHost
+        val user = _uiState.value.sftpUser
+        if (host.isBlank() || user.isBlank()) {
+            _uiState.update { it.copy(sftpResult = "Host and username required") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(sftpTesting = true, sftpResult = "Reading host key...") }
+            val config = SftpConfig(
+                host = host,
+                port = _uiState.value.sftpPort.toIntOrNull() ?: 22,
+                username = user,
+                password = _uiState.value.sftpPassword
+            )
+            sftpUploader.probeHostKey(config)
+                .onSuccess { probe ->
+                    _uiState.update {
+                        it.copy(
+                            sftpTesting = false,
+                            sftpOfferedFingerprint = probe.fingerprint,
+                            sftpResult = if (probe.matchesPinned) {
+                                "Host key matches the pinned one."
+                            } else {
+                                "Server offers ${probe.fingerprint}"
+                            }
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(sftpTesting = false, sftpResult = "SFTP error: ${e.message}") }
+                }
+        }
+    }
+
+    fun pinSftpFingerprint(fingerprint: String) {
+        _uiState.update {
+            it.copy(
+                settings = it.settings.copy(sftpFingerprint = fingerprint),
+                sftpOfferedFingerprint = null,
+                sftpResult = "Host key pinned."
+            )
+        }
+        saveSettings()
+    }
+
+    fun clearSftpFingerprint() {
+        _uiState.update {
+            it.copy(settings = it.settings.copy(sftpFingerprint = ""), sftpResult = "Host key unpinned.")
+        }
+        saveSettings()
+    }
+
+    fun updateBackgroundSync(enabled: Boolean) {
+        _uiState.update { it.copy(settings = it.settings.copy(backgroundSyncEnabled = enabled)) }
+        saveSettings()
+    }
+
+    fun updateSyncInterval(minutes: Int) {
+        _uiState.update {
+            it.copy(
+                settings = it.settings.copy(
+                    // WorkManager silently rounds anything below 15 up to 15;
+                    // clamping here keeps the shown number honest.
+                    syncIntervalMinutes = minutes.coerceAtLeast(15)
+                )
+            )
+        }
+        saveSettings()
     }
 
     fun updateSftpHost(v: String) { _uiState.update { it.copy(sftpHost = v) } }
