@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import java.security.MessageDigest
 
@@ -16,6 +17,12 @@ import java.security.MessageDigest
  * it is pinned here rather than left to a manual check against a real server.
  */
 @RunWith(RobolectricTestRunner::class)
+// Robolectric 4.13 ships no SDK 36 image, and the module targets 36, so an
+// unpinned test fails to even start ("targetSdkVersion=36 > maxSdkVersion=34").
+// The bare Application is the same workaround ThemeScreenshotTest documents:
+// the Hilt Application reaches for the AndroidKeyStore at startup, which does
+// not exist under Robolectric.
+@Config(sdk = [34], application = android.app.Application::class)
 class SftpUploaderTest {
 
     private val uploader = SftpUploader()
