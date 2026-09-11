@@ -273,25 +273,8 @@ private fun MessageBubbleContent(
 
     val bg = if (isSelected) bubbleColor.copy(alpha = 0.6f) else bubbleColor
 
-    val statusLabel = if (isOutgoing) when (message.status) {
-        MessageStatus.SENDING -> "sending"
-        MessageStatus.SENT -> "sent"
-        MessageStatus.DELIVERED -> "delivered"
-        MessageStatus.READ -> "read"
-        MessageStatus.FAILED -> "failed to send"
-    } else null
-    val bubbleDescription = buildString {
-        append(if (isOutgoing) "You" else "Message")
-        if (message.mediaType == com.rustypastechat.data.model.MediaType.FILE && message.text.isNotBlank()) {
-            append(": file ${message.text}")
-        } else if (message.text.isNotBlank()) {
-            append(": ${message.text}")
-        } else if (!message.mediaUrl.isNullOrBlank()) {
-            append(if (message.mediaType == com.rustypastechat.data.model.MediaType.VIDEO) ": video" else ": image")
-        }
-        append(", $timeText")
-        if (statusLabel != null) append(", $statusLabel")
-    }
+    val statusLabel = statusLabel(message, isOutgoing)
+    val bubbleDescription = messageAccessibilityLabel(message, timeText, isOutgoing)
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),

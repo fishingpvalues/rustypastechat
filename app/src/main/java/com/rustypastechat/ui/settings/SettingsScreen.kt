@@ -1,7 +1,11 @@
 package com.rustypastechat.ui.settings
 
 import android.os.Build
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.BackEventCompat
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableFloatStateOf
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -145,12 +149,36 @@ fun SettingsScreen(
     // state), so without this the system back button/gesture would skip past them
     // straight to ChatList instead of returning to the Settings main page first —
     // inconsistent with every other back-navigation in the app.
-    BackHandler(enabled = currentPage != SettingsPage.Main) {
+    // Predictive back, not a plain BackHandler. Apps targeting Android 16 get
+    // predictive back by default, and a plain BackHandler opts that animation
+    // out: the settings sub-pages were the one place in the app where the
+    // system back preview did not show what you were returning to.
+    //
+    // The commit still saves, same as before - a back gesture out of an editor
+    // page is a confirmation, not a discard.
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    var backFromLeftEdge by remember { mutableStateOf(true) }
+
+    fun commitBack() {
         when (currentPage) {
             SettingsPage.Appearance, SettingsPage.Server, SettingsPage.Llm, SettingsPage.Security -> onSave()
             else -> {}
         }
         currentPage = SettingsPage.Main
+    }
+
+    PredictiveBackHandler(enabled = currentPage != SettingsPage.Main) { progress ->
+        try {
+            progress.collect { event ->
+                backFromLeftEdge = event.swipeEdge == BackEventCompat.EDGE_LEFT
+                backProgress = event.progress
+            }
+            commitBack()
+        } catch (_: CancellationException) {
+            // Gesture abandoned: the page stays, the transform unwinds below.
+        } finally {
+            backProgress = 0f
+        }
     }
 
     AnimatedContent(
@@ -164,7 +192,14 @@ fun SettingsScreen(
                     .togetherWith(slideOutHorizontally { it } + androidx.compose.animation.fadeOut())
             }
         },
-        label = "settingsPage"
+        label = "settingsPage",
+        modifier = Modifier.graphicsLayer {
+            val p = backProgress
+            scaleX = PredictiveBackTransform.scale(p)
+            scaleY = PredictiveBackTransform.scale(p)
+            alpha = PredictiveBackTransform.alpha(p)
+            translationX = PredictiveBackTransform.slideFraction(p, backFromLeftEdge) * size.width
+        }
     ) { _ ->
         when (currentPage) {
             SettingsPage.Main -> MainPage(
