@@ -260,8 +260,9 @@ private fun MessageBubbleContent(
         else -> if (darkTheme) RustyColors.BubbleIncomingTextDark else RustyColors.BubbleIncomingTextLight
     }
 
-    val timeText = remember(message.timestamp) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
+    val timeText = remember(message.timestamp, message.hasKnownTimestamp) {
+        if (!message.hasKnownTimestamp) ""
+        else SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
     val rowAlignment = if (isOutgoing) Alignment.End else Alignment.Start
     val bubbleShape = if (isOutgoing) {

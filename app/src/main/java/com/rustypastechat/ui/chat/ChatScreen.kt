@@ -153,7 +153,7 @@ internal fun buildChatItems(displayMessages: List<Message>, showDateHeaders: Boo
                 flushMediaGroup()
                 if (showDateHeaders) {
                     val prevTimestamp = if (index > 0) displayMessages[index - 1].timestamp else null
-                    if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
+                    if (msg.hasKnownTimestamp && shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
                         add(ChatListItem.Single(msg.copy(id = "header_${msg.id}", text = "\u0000header:${formatDateHeader(msg.timestamp)}")))
                     }
                 }
@@ -161,7 +161,7 @@ internal fun buildChatItems(displayMessages: List<Message>, showDateHeaders: Boo
             } else {
                 if (showDateHeaders && pendingMediaGroup.isEmpty()) {
                     val prevTimestamp = if (index > 0) displayMessages[index - 1].timestamp else null
-                    if (shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
+                    if (msg.hasKnownTimestamp && shouldShowDateHeader(prevTimestamp, msg.timestamp)) {
                         add(ChatListItem.Single(msg.copy(id = "header_${msg.id}", text = "\u0000header:${formatDateHeader(msg.timestamp)}")))
                     }
                 }

@@ -164,8 +164,8 @@ class PasteRepository @Inject constructor(
 
             val importedPastes = otherPastes.sortedBy { it.creationDateUtc ?: "" }
             val importedMessages = coroutineScope {
-                importedPastes.map { paste ->
-                    async { pasteToImportedMessage(paste, settings, chatContentSet) }
+                importedPastes.mapIndexed { index, paste ->
+                    async { pasteToImportedMessage(index, paste, settings, chatContentSet) }
                 }.awaitAll().filterNotNull()
             }
 
@@ -215,8 +215,8 @@ class PasteRepository @Inject constructor(
                 val otherPastes = pastes.filter { !Message.isChatFile(it.fileName) }
                 val chatContentSet = chatMessages.mapTo(mutableSetOf()) { it.text }
                 coroutineScope {
-                    otherPastes.sortedBy { it.creationDateUtc ?: "" }.map { paste ->
-                        async { pasteToImportedMessage(paste, settings, chatContentSet) }
+                    otherPastes.sortedBy { it.creationDateUtc ?: "" }.mapIndexed { index, paste ->
+                        async { pasteToImportedMessage(index, paste, settings, chatContentSet) }
                     }.awaitAll().filterNotNull()
                 }
             } else {
@@ -234,9 +234,29 @@ class PasteRepository @Inject constructor(
 
     companion object {
         const val DEFAULT_PAGE_SIZE = 50
+
+        /**
+         * Sort anchor for pastes the server gave no creation date for. Low
+         * enough that they order before every real message and stable across
+         * reloads, and never displayed - [Message.hasKnownTimestamp] is false
+         * for these.
+         */
+        const val IMPORTED_ORDER_BASE = 0L
+
+        /**
+         * Timestamp and known-ness for an imported (foreign) paste.
+         *
+         * [serverTs] is what the server reported, already parsed, or null when
+         * it reported nothing. Returns the value to sort by and whether it is
+         * real enough to display.
+         */
+        fun importedTimestamp(serverTs: Long?, orderIndex: Int): Pair<Long, Boolean> =
+            if (serverTs != null) serverTs to true
+            else (IMPORTED_ORDER_BASE + orderIndex) to false
     }
 
     private suspend fun pasteToImportedMessage(
+        orderIndex: Int,
         paste: PasteItem,
         settings: AppSettings,
         existingContent: Set<String>
@@ -253,7 +273,16 @@ class PasteRepository @Inject constructor(
             return null
         }
 
-        val creationTs = parseCreationTimestamp(paste.creationDateUtc) ?: System.currentTimeMillis()
+        // A foreign paste has whatever time the server chose to report, which on
+        // the reference deployment is none at all: rustypaste derives
+        // creation_date_utc from the file's filesystem birth time and returns
+        // null when it cannot read one. Falling back to "now" gave every
+        // imported message the moment it happened to be read, so 33 of them
+        // shared one timestamp and all of them moved on every reload.
+        // Without a date, list order is the only ordering signal there is, and
+        // it is kept by anchoring below every real message rather than above.
+        val (creationTs, timestampKnown) =
+            importedTimestamp(parseCreationTimestamp(paste.creationDateUtc), orderIndex)
         val isMedia = paste.fileName.substringAfterLast('.', "").lowercase() in
             listOf("jpg", "jpeg", "png", "gif", "webp", "mp4", "webm")
 
@@ -266,7 +295,8 @@ class PasteRepository @Inject constructor(
             mediaUrl = if (isMedia) getFileUrl(settings, paste.fileName) else null,
             mediaType = if (isMedia) MediaType.IMAGE else null,
             pasteFileName = paste.fileName,
-            isImported = true
+            isImported = true,
+            hasKnownTimestamp = timestampKnown
         )
     }
 

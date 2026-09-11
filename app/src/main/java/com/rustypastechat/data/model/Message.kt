@@ -27,6 +27,17 @@ data class Message(
     val isOneshot: Boolean = false,
     val expiresAt: Long? = null,
     val isImported: Boolean = false,
+    /**
+     * False when [timestamp] is a placeholder rather than a time the message
+     * actually has. rustypaste fills `creation_date_utc` from the file's
+     * filesystem birth time, and returns null whenever that is unavailable -
+     * on the reference deployment it is null for every entry, even though the
+     * host's ext4 does record a birth time. Messages this app sent carry their
+     * own timestamp in the paste filename and are unaffected; a foreign paste
+     * has no time to show, and showing the moment it happened to be read is a
+     * lie that changes on every reload.
+     */
+    val hasKnownTimestamp: Boolean = true,
     val chatId: String = "default",
     val isEdited: Boolean = false,
     val reactions: List<String> = emptyList(),
