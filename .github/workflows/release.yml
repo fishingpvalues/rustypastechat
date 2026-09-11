@@ -61,9 +61,22 @@ jobs:
 
       - name: Extract version
         id: version
+        # Anchored on the assignment, not on the word: build.gradle.kts has a
+        # COMMENT mentioning versionName above the real line, so a bare
+        # `grep versionName | head -1` picked the prose. sed then found no
+        # quoted group, VERSION became the comment text, and the rename step
+        # died on `cp: target 'release.-release.apk': No such file or
+        # directory`. Empty is treated as fatal rather than silently building
+        # a nonsense filename.
         run: |
-          VERSION=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(grep -Eo '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"[^"]+"' \
+            app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          echo "Resolved version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Rename APK
         run: |

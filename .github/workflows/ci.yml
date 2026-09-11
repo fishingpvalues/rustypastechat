@@ -68,6 +68,14 @@ jobs:
     # the build and the APK were fine.
     permissions:
       contents: write
+    # Even with the permission the API answers "The Dependency graph is
+    # disabled for this repository", which is a REPOSITORY setting
+    # (Settings > Advanced Security > Dependency graph), not something a
+    # workflow can turn on. Until it is enabled this job cannot succeed, and a
+    # supply-chain nicety must not be what makes the build look broken and
+    # hides a real failure. Flip that setting and drop this line to make it a
+    # hard gate again.
+    continue-on-error: true
 
     steps:
       - name: Checkout
