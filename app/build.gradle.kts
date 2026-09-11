@@ -65,6 +65,26 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // The debug-signing fallback exists so `assembleRelease` still
+            // compiles on a machine with no keystore. It must never produce a
+            // published artifact: a debug-signed APK is signed with a key
+            // every Android SDK ships, so anyone can build an update for it,
+            // and it can never be re-signed with a real key afterwards -
+            // Android refuses an update whose signer changed.
+            //
+            // REQUIRE_RELEASE_SIGNING=true turns the fallback into a build
+            // failure. The release workflow sets it for tag builds, which is
+            // the only place an artifact reaches a user.
+            val requireRealSigning =
+                (System.getenv("REQUIRE_RELEASE_SIGNING") ?: "false").toBoolean()
+            if (requireRealSigning && !hasReleaseSigningConfig) {
+                throw GradleException(
+                    "REQUIRE_RELEASE_SIGNING is set but no release keystore is configured. " +
+                        "Set RUSTYPASTECHAT_KEYSTORE_PATH/PASSWORD/KEY_ALIAS/KEY_PASSWORD " +
+                        "(CI secrets) or release.* in local.properties. Refusing to publish " +
+                        "a debug-signed APK."
+                )
+            }
             signingConfig = if (hasReleaseSigningConfig) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
         debug {

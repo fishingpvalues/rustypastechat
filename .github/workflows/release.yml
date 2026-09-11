@@ -54,6 +54,11 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon
         env:
+          # A tag build publishes to users, so refuse the debug-signing
+          # fallback rather than shipping an APK signed with the key every
+          # Android SDK ships. Untagged pushes keep building so the pipeline
+          # itself stays testable without secrets.
+          REQUIRE_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') }}
           RUSTYPASTECHAT_KEYSTORE_PASSWORD: ${{ secrets.RUSTYPASTECHAT_KEYSTORE_PASSWORD }}
           RUSTYPASTECHAT_KEY_ALIAS: ${{ secrets.RUSTYPASTECHAT_KEY_ALIAS }}
           RUSTYPASTECHAT_KEY_PASSWORD: ${{ secrets.RUSTYPASTECHAT_KEY_PASSWORD }}
