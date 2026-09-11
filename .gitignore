@@ -25,3 +25,7 @@ local-potato.env
 
 # Built artifacts are attached to releases, not committed
 /releases/
+
+# Release signing material - never commit
+/keystore/
+*.release-jks-password
