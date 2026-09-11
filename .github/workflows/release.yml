@@ -16,6 +16,15 @@ jobs:
     permissions:
       contents: write
 
+    # The keystore secret is exposed as an env var rather than read inline in
+    # `if:`. The `secrets` context is NOT available to a step-level `if`, and
+    # using it there does not fail the step - it fails the whole workflow file
+    # to parse, which GitHub reports as a 0-second run named after the file
+    # path instead of "Release". Every push to master since 2026-07-13 failed
+    # that way.
+    env:
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RUSTYPASTECHAT_KEYSTORE_BASE64 }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,9 +43,12 @@ jobs:
       # Actions. Without them, the release build falls back to debug signing (see
       # app/build.gradle.kts) — functional for testing, but not a real Play Store artifact.
       - name: Decode release keystore
-        if: ${{ secrets.RUSTYPASTECHAT_KEYSTORE_BASE64 != '' }}
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        # Piped from the environment, never interpolated into the script body:
+        # a `${{ secrets.* }}` expansion inside `run:` puts the key material in
+        # the generated shell script on disk.
         run: |
-          echo "${{ secrets.RUSTYPASTECHAT_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "RUSTYPASTECHAT_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Build release APK

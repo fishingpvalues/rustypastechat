@@ -145,7 +145,11 @@ class SettingsViewModel @Inject constructor(
                     _uiState.update { it.copy(isTesting = false, testResult = "Server URL is empty") }
                     return@launch
                 }
-                val api = apiClientFactory.createPasteApi(settings.pasteServerUrl)
+                // Test what is on screen, not what was last saved.
+                val api = apiClientFactory.createPasteApi(
+                    settings.pasteServerUrl,
+                    tokenOverride = settings.authToken
+                )
                 val response = api.listFiles()
                 if (response.isSuccessful) {
                     _uiState.update { it.copy(isTesting = false, testResult = "Connected! ${response.body()?.size ?: 0} pastes on server") }
