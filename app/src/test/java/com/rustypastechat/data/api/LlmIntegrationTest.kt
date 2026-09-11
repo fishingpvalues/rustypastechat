@@ -9,22 +9,39 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.junit.Assert.*
+import org.junit.Assume.assumeFalse
+import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
+/**
+ * Exercises a real OpenAI-compatible endpoint.
+ *
+ * Opt-in: every test is skipped unless LLM_TEST_BASE_URL and LLM_TEST_API_KEY
+ * are set. It used to run unconditionally against a hardcoded endpoint with a
+ * hardcoded key, which made `make test` depend on a third party being up - it
+ * failed on a read timeout during this audit - and put a live credential in a
+ * public repository. Contract-level behaviour that does not need a server is
+ * covered by LlmApiTest against a local fake.
+ *
+ *     LLM_TEST_BASE_URL=https://host/v1 LLM_TEST_API_KEY=... \
+ *     LLM_TEST_MODELS=model-a,model-b ./gradlew testDebugUnitTest
+ */
 class LlmIntegrationTest {
 
     companion object {
-        private val API_KEY = System.getenv("MITTWALD_API_KEY")
-            ?: "sk-6W6Br1JvSwc4Y_ICIG3z_w"
-        private val BASE_URL = System.getenv("MITTWALD_BASE_URL")
-            ?: "https://llm.aihosting.mittwald.de/v1"
-        private val chatModels = (System.getenv("MITTWALD_CHAT_MODELS")
-            ?: "gpt-oss-120b,Ministral-3-14B-Instruct-2512,Qwen3.5-122B-A10B-FP8,Qwen3.6-35B-A3B-FP8,Qwen3.5-0.8B,Mistral-Medium-3.5-128B")
-            .split(",").map { it.trim() }
+        private val API_KEY: String? = System.getenv("LLM_TEST_API_KEY")
+        private val BASE_URL: String? = System.getenv("LLM_TEST_BASE_URL")
+        private val chatModels = (System.getenv("LLM_TEST_MODELS") ?: "")
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+        /** First entry of LLM_TEST_MODELS. The suite must not name a
+         *  provider's models: this app targets any OpenAI-compatible
+         *  endpoint, so pinning one vendor's ids tested the vendor. */
+        private val primaryModel: String get() = chatModels.first()
 
         private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
         private val client = OkHttpClient.Builder()
@@ -32,16 +49,25 @@ class LlmIntegrationTest {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .build()
-        private val api = Retrofit.Builder()
-            .baseUrl(BASE_URL.let { if (it.endsWith("/")) it else "$it/" })
-            .client(client)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-            .create(OpenAiApi::class.java)
+        private val api: OpenAiApi by lazy {
+            Retrofit.Builder()
+                .baseUrl(BASE_URL!!.let { if (it.endsWith("/")) it else "$it/" })
+                .client(client)
+                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+                .build()
+                .create(OpenAiApi::class.java)
+        }
+    }
+
+    @Before
+    fun requireLiveEndpoint() {
+        assumeFalse("LLM_TEST_BASE_URL not set - live LLM tests skipped", BASE_URL.isNullOrBlank())
+        assumeFalse("LLM_TEST_API_KEY not set - live LLM tests skipped", API_KEY.isNullOrBlank())
     }
 
     @Test
     fun `list models returns available models`() = runBlocking {
+        assumeFalse("LLM_TEST_MODELS not set", chatModels.isEmpty())
         val client = OkHttpClient.Builder().build()
         val request = okhttp3.Request.Builder()
             .url("$BASE_URL/models")
@@ -50,14 +76,17 @@ class LlmIntegrationTest {
         val response = client.newCall(request).execute()
         assertEquals(200, response.code)
         val body = response.body?.string() ?: ""
-        assertTrue("Should contain model IDs", body.contains("gpt-oss-120b"))
-        assertTrue("Should contain model IDs", body.contains("Ministral-3-14B"))
+        assertTrue("/models must list at least one model", body.contains("\"id\""))
+        chatModels.forEach {
+            assertTrue("configured model $it is not offered by this endpoint", body.contains(it))
+        }
     }
 
     @Test
-    fun `chat completion with Ministral returns response`() = runBlocking {
+    fun `chat completion returns a response`() = runBlocking {
+        assumeFalse("LLM_TEST_MODELS not set", chatModels.isEmpty())
         val request = LlmChatRequest(
-            model = "Ministral-3-14B-Instruct-2512",
+            model = primaryModel,
             messages = listOf(LlmMessage("user", "What is 2+2? Answer with just the number.")),
             maxTokens = 10
         )
@@ -70,9 +99,10 @@ class LlmIntegrationTest {
     }
 
     @Test
-    fun `chat completion with Qwen 35B works`() = runBlocking {
+    fun `chat completion works for the second configured model`() = runBlocking {
+        assumeFalse("needs a second model in LLM_TEST_MODELS", chatModels.size < 2)
         val request = LlmChatRequest(
-            model = "Qwen3.6-35B-A3B-FP8",
+            model = chatModels[1],
             messages = listOf(LlmMessage("user", "Say 'hello' in one word")),
             maxTokens = 20
         )
@@ -89,8 +119,9 @@ class LlmIntegrationTest {
 
     @Test
     fun `streaming chat completion delivers chunks`() = runBlocking {
+        assumeFalse("LLM_TEST_MODELS not set", chatModels.isEmpty())
         val request = LlmChatRequest(
-            model = "Ministral-3-14B-Instruct-2512",
+            model = primaryModel,
             messages = listOf(LlmMessage("user", "Count from 1 to 3.")),
             stream = true,
             maxTokens = 50
@@ -126,6 +157,7 @@ class LlmIntegrationTest {
 
     @Test
     fun `all chat models respond successfully`() = runBlocking {
+        assumeFalse("LLM_TEST_MODELS not set", chatModels.isEmpty())
         for (model in chatModels) {
             if (model.contains("whisper") || model.contains("embed", ignoreCase = true) ||
                 model.contains("ocr", ignoreCase = true) || model.contains("reranker", ignoreCase = true))
@@ -154,13 +186,14 @@ class LlmIntegrationTest {
 
     @Test
     fun `multi-turn conversation maintains context`() = runBlocking {
+        assumeFalse("LLM_TEST_MODELS not set", chatModels.isEmpty())
         val messages = listOf(
             LlmMessage("user", "My name is TestBot."),
             LlmMessage("assistant", "Nice to meet you, TestBot!"),
             LlmMessage("user", "What is my name?")
         )
         val request = LlmChatRequest(
-            model = "Ministral-3-14B-Instruct-2512",
+            model = primaryModel,
             messages = messages,
             maxTokens = 20
         )
@@ -184,8 +217,9 @@ class LlmIntegrationTest {
 
     @Test
     fun `invalid API key returns 401`() = runBlocking {
+        assumeFalse("LLM_TEST_MODELS not set", chatModels.isEmpty())
         val request = LlmChatRequest(
-            model = "Ministral-3-14B-Instruct-2512",
+            model = primaryModel,
             messages = listOf(LlmMessage("user", "Hi")),
             maxTokens = 5
         )

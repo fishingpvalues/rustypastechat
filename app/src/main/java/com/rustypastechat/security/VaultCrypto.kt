@@ -1,23 +1,29 @@
 package com.rustypastechat.security
 
 import android.content.Context
-import android.util.Base64
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.io.File
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
+/**
+ * Key material for the two at-rest stores: EncryptedSharedPreferences for the
+ * auth token and the LLM key, EncryptedFile for cached message bodies and
+ * backup archives. Both are bound to a Keystore-backed [MasterKey], which is
+ * why the app opts out of Android backup entirely - see
+ * res/xml/data_extraction_rules.xml.
+ *
+ * This deliberately offers no raw Cipher helpers. It used to, and they were a
+ * trap: the key came from an in-process KeyGenerator rather than the Keystore,
+ * behind a private function named getAesKeyFromKeystore, so anything encrypted
+ * with them became undecryptable at the next process death. Nothing ever
+ * called them. Encrypt through EncryptedFile or EncryptedSharedPreferences, or
+ * add a Keystore-backed key here with a test that survives a restart.
+ */
 object VaultCrypto {
 
     const val KEY_ALIAS = "rustypastechat_secrets_v1"
     private const val META_PREFS = "rustypastechat_secure_prefs"
-    private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"
-    private const val GCM_TAG_LENGTH = 128
 
     private var cachedMasterKey: MasterKey? = null
 
@@ -38,11 +44,6 @@ object VaultCrypto {
         ) as EncryptedSharedPreferences
     }
 
-    fun generateRandomToken(length: Int = 32): String {
-        val bytes = ByteArray(length).also { SecureRandom().nextBytes(it) }
-        return Base64.encodeToString(bytes, Base64.NO_WRAP)
-    }
-
     fun createEncryptedFile(
         context: Context,
         file: File
@@ -60,33 +61,5 @@ object VaultCrypto {
     ): EncryptedFile {
         if (!dir.exists()) dir.mkdirs()
         return createEncryptedFile(context, File(dir, fileName))
-    }
-
-    fun getEncryptionCipher(): Cipher {
-        val key = generateAesKey()
-        val cipher = Cipher.getInstance(AES_TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key)
-        return cipher
-    }
-
-    fun getDecryptionCipher(iv: ByteArray): Cipher {
-        val key = getAesKeyFromKeystore()
-        val cipher = Cipher.getInstance(AES_TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, iv))
-        return cipher
-    }
-
-    private var aesKey: SecretKey? = null
-
-    private fun generateAesKey(): SecretKey {
-        return aesKey ?: run {
-            val keyGenerator = KeyGenerator.getInstance("AES")
-            keyGenerator.init(256, SecureRandom())
-            keyGenerator.generateKey().also { aesKey = it }
-        }
-    }
-
-    private fun getAesKeyFromKeystore(): SecretKey {
-        return aesKey ?: generateAesKey()
     }
 }

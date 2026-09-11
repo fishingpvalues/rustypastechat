@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing leaves the device through Android's backup or device-transfer paths.
+
+  Two reasons, and the first one is a correctness bug rather than a policy
+  preference. The auth token, the LLM API key and the cached message bodies are
+  held in EncryptedSharedPreferences and EncryptedFile, whose master key lives
+  in the Android Keystore. The Keystore is NOT part of a backup, so a restore
+  onto a new device delivers ciphertext with no key: androidx.security then
+  throws when it opens the store, on a path the app runs at startup.
+
+  The second is that DataStore holds per-chat drafts, which are unsent message
+  text. Backing those up copies chat content off the device and into a cloud
+  account, which is the opposite of what a self-hosted chat app is for.
+
+  Re-entering a server URL and a token is the intended cost. The app's own
+  backup (Settings -> Backup, encrypted, uploaded over SFTP to a host you pin)
+  is the supported way to move chats between devices.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

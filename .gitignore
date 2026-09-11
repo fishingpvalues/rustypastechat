@@ -22,3 +22,6 @@ captures/
 # Local-only credentials and agent scratch
 local-potato.env
 .pi/
+
+# Built artifacts are attached to releases, not committed
+/releases/
