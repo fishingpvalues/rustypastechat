@@ -4,10 +4,15 @@ import kotlinx.coroutines.*
 import java.io.File
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
+import kotlin.io.path.createTempDirectory
 
 class RustyPasteTestServer(
     val port: Int = findFreePort(),
-    val uploadDir: File = createTempDir("rustypaste_test_upload")
+    // kotlin.io.createTempDir is an error since Kotlin 2.4, and the reason is
+    // not style: it creates the directory in the shared temp location with
+    // permissions wide enough for any local user to read. This test server
+    // writes uploaded pastes there.
+    val uploadDir: File = createTempDirectory("rustypaste_test_upload").toFile()
 ) : AutoCloseable {
 
     private var process: Process? = null

@@ -108,8 +108,12 @@ fun RustyPasteChatTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
+            // statusBarColor/navigationBarColor are deprecated and have no
+            // effect once the app is edge-to-edge, which is mandatory on
+            // Android 16: the system draws its own scrims and the app draws
+            // behind them. Setting them was already a no-op here, because
+            // MainActivity calls enableEdgeToEdge(). Only the icon appearance
+            // still needs saying, and that is what the controller is for.
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme

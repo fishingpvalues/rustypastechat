@@ -16,7 +16,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material3.Icon
@@ -39,7 +39,7 @@ private data class OnboardingPage(val icon: ImageVector, val title: String, val 
 
 private val ONBOARDING_PAGES = listOf(
     OnboardingPage(
-        Icons.Outlined.Chat,
+        Icons.AutoMirrored.Outlined.Chat,
         "Chat with your paste server",
         "Every message is a paste note on your own rustypaste instance — no third-party servers involved."
     ),

@@ -28,10 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddReaction
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Reply
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -145,7 +145,7 @@ fun SwipeableMessageBubble(
                     .background(RustyColors.Success.copy(alpha = 0.9f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Reply, "Reply", tint = Color.White, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Default.Reply, "Reply", tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
         if (swipeDisplay < -30f) {
@@ -515,7 +515,7 @@ private fun FileAttachment(url: String, fileName: String) {
             .semantics { contentDescription = "File attachment: $fileName, tap to open" },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.InsertDriveFile, contentDescription = null, modifier = Modifier.size(28.dp))
+        Icon(Icons.AutoMirrored.Default.InsertDriveFile, contentDescription = null, modifier = Modifier.size(28.dp))
         Spacer(Modifier.width(8.dp))
         Text(
             fileName,

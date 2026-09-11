@@ -32,7 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Forward
+import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Reply
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.StrikethroughS
 import androidx.compose.material.icons.filled.Timer
@@ -346,7 +346,7 @@ fun ChatScreen(
                                 textStyle = MaterialTheme.typography.bodyMedium
                             )
                         },
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
                 isSelectMode -> {
@@ -369,7 +369,7 @@ fun ChatScreen(
                             }) { Icon(Icons.Default.ContentCopy, "Copy") }
                             IconButton(onClick = {
                                 selectedIds.forEach { onForwardMessage(it) }; selectedIds = emptySet()
-                            }) { Icon(Icons.Default.Forward, "Forward") }
+                            }) { Icon(Icons.AutoMirrored.Default.Forward, "Forward") }
                             IconButton(onClick = {
                                 selectedIds.forEach { onToggleStar(it) }; selectedIds = emptySet()
                             }) { Icon(Icons.Default.Star, "Star") }
@@ -377,7 +377,7 @@ fun ChatScreen(
                                 selectedIds.forEach { onDeleteMessage(it, true) }; selectedIds = emptySet()
                             }) { Icon(Icons.Default.Delete, "Delete for everyone") }
                         },
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
                     )
                 }
                 else -> {
@@ -429,7 +429,7 @@ fun ChatScreen(
                                 }
                             }
                         },
-                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
             }
@@ -483,7 +483,7 @@ fun ChatScreen(
                         uiState.replyTarget?.let { reply ->
                             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                 .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Reply, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Default.Reply, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(if (reply.isOutgoing) "Replying to yourself" else "Replying", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
@@ -620,7 +620,7 @@ fun ChatScreen(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Icon(
-                                                        Icons.Filled.Reply,
+                                                        Icons.AutoMirrored.Filled.Reply,
                                                         contentDescription = null,
                                                         tint = MaterialTheme.colorScheme.primary,
                                                         modifier = Modifier.size(14.dp)

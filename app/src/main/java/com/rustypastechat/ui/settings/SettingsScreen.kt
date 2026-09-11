@@ -1166,7 +1166,7 @@ private fun StoragePage(
                                 Column(Modifier.weight(1f)) {
                                     Text(file.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
                                     Text(
-                                        "${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))} | ${file.length() / 1024} KB",
+                                        "${com.rustypastechat.ui.common.rememberFormattedDate("dd.MM.yyyy HH:mm", file.lastModified())} | ${file.length() / 1024} KB",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

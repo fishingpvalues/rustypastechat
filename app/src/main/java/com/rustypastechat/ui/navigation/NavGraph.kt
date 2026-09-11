@@ -4,9 +4,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -54,7 +54,7 @@ fun NavGraph() {
     }
 
     val navBarItems = listOf(
-        AnimatedNavItem(ChatList, "Chats", Icons.Rounded.Chat, Icons.Outlined.Chat),
+        AnimatedNavItem(ChatList, "Chats", Icons.AutoMirrored.Rounded.Chat, Icons.AutoMirrored.Outlined.Chat),
         AnimatedNavItem(Settings, "Settings", Icons.Rounded.Settings, Icons.Outlined.Settings),
     )
 

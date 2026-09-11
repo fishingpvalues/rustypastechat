@@ -29,7 +29,7 @@ import com.rustypastechat.ui.animations.shimmerEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -89,6 +89,7 @@ import com.rustypastechat.ui.components.GlassCard
 import com.rustypastechat.ui.components.RustyMark
 import com.rustypastechat.ui.components.GlassShape
 import kotlinx.coroutines.launch
+import com.rustypastechat.ui.common.rememberFormattedDate
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -674,7 +675,7 @@ private fun ChatDetailDialog(
                 ListItem(
                     headlineContent = { Text("Messages") },
                     supportingContent = { Text("${chat.messageCount} messages in this chat") },
-                    leadingContent = { Icon(Icons.Default.Chat, null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingContent = { Icon(Icons.AutoMirrored.Default.Chat, null, tint = MaterialTheme.colorScheme.primary) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
 
@@ -779,7 +780,7 @@ private fun SearchResultItem(msg: Message, onClick: () -> Unit) {
             Text(msg.text.take(120), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
             Text(
-                "Chat: ${msg.chatId.take(8)} \u00B7 ${SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date(msg.timestamp))}",
+                "Chat: ${msg.chatId.take(8)} \u00B7 ${rememberFormattedDate("dd.MM. HH:mm", msg.timestamp)}",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

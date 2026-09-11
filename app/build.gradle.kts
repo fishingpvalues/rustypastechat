@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
@@ -12,7 +11,11 @@ plugins {
 
 android {
     namespace = "com.rustypastechat"
-    compileSdk = 36
+    // compileSdk, not targetSdk. Compiling against 37 is what the current
+    // androidx artifacts require; targetSdk stays 36 because moving it opts
+    // the app in to Android 17 runtime behavior - notably the strict
+    // per-process memory limit - which is a change to test on its own.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.rustypastechat"
@@ -97,8 +100,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    // AGP 9 builds Kotlin itself - the org.jetbrains.kotlin.android plugin is
+    // gone and with it the kotlinOptions block. The JVM target moves to the
+    // built-in Kotlin extension.
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     packaging {
