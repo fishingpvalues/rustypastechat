@@ -95,13 +95,16 @@ jobs:
           APK="rustypastechat-v${VERSION}-release.apk"
 
           gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
-          git push origin :refs/tags/nightly 2>/dev/null || true
 
-          git tag -f nightly
-          git push origin nightly
-
+          # --target, rather than pushing the tag by hand first. The old
+          # sequence deleted the tag, re-pushed it, then called gh, which
+          # answered "tag nightly exists locally but has not been pushed" -
+          # it compares against the remote and lost the race with its own
+          # push. --target has gh create the tag at this commit itself, so
+          # there is nothing to race.
           gh release create nightly \
             "$APK" \
+            --target "${{ github.sha }}" \
             --title "Nightly Build (v${VERSION})" \
             --prerelease \
             --notes "## Nightly Release Build
@@ -109,6 +112,15 @@ jobs:
           **Version:** ${VERSION}
           **Commit:** ${{ github.sha }}
           **Date:** $(date -u +'%Y-%m-%d %H:%M UTC')
+
+          ### Signing
+
+          This APK is **debug-signed**. No release keystore is configured for
+          this repository, so the build falls back to the key that ships with
+          every Android SDK. Install it for testing only: anyone can produce an
+          update for a debug-signed app, and it cannot be upgraded in place to
+          a properly signed release later, because Android refuses an update
+          whose signer changed.
 
           > Automatically published from the latest \`master\` branch."
         env:
