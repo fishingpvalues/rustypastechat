@@ -153,4 +153,4 @@ than an omission to be patched.
 
 ## License
 
-MIT. rustypaste itself is by [orhun](https://github.com/orhun/rustypaste).
+MIT, see [LICENSE](LICENSE). rustypaste itself is by [orhun](https://github.com/orhun/rustypaste).
